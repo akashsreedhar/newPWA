@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Confetti from 'react-confetti';
 import { useAddresses } from '../hooks/useAddresses';
 import AddressModal, { Address } from './AddressModal';
@@ -10,6 +9,7 @@ interface OrderReviewModalProps {
   cartItems: any[];
   onPlaceOrder: (order: { address: any; message: string }) => void;
   onClearCart?: () => void;
+  onNavigateToOrders?: () => void;
   userId?: string | null;
   disableOrderReview?: boolean;
   deliveryAllowed?: boolean;
@@ -23,13 +23,13 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   cartItems,
   onPlaceOrder,
   onClearCart,
+  onNavigateToOrders,
   userId,
   disableOrderReview = false,
   deliveryAllowed = true,
   deliveryCheckPending = false,
   loading = false,
 }) => {
-  const navigate = useNavigate();
   // Animation/order state machine: 'idle' | 'progress' | 'confetti' | 'checkmark'
   const [step, setStep] = useState<'idle' | 'progress' | 'confetti' | 'checkmark'>('idle');
   // For progress bar
@@ -112,10 +112,10 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     setError(null);
     // Always set as default when adding or editing
     const addressToSave = { ...address, isDefault: true };
-    await saveAddress(addressToSave, action);
+    const savedAddress = await saveAddress(addressToSave as any, action);
     await refreshAddresses();
     // Instantly select the new/edited address as the selected address
-    selectAddress(addressToSave);
+    selectAddress(savedAddress || addressToSave);
     setAddressModalOpen(false);
     setEditingAddress(null);
     setAddressModalMode('list');
@@ -200,8 +200,10 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 console.log('🗑️ Clearing cart');
                 onClearCart();
               }
-              // Redirect to Orders page
-              navigate('/orders');
+              // Navigate to Orders page
+              if (onNavigateToOrders) {
+                onNavigateToOrders();
+              }
               // Close modal after redirect
               if (onClose) onClose();
               // Reset state after a short delay to allow re-use
@@ -331,7 +333,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                       <div>
                         <div className="font-medium">{selectedAddress.label}</div>
                         <div className="text-xs text-gray-500">{selectedAddress.details}</div>
-                        <div className="text-xs text-gray-500">{selectedAddress.phone}</div>
+                        {(selectedAddress as any).phone && (
+                          <div className="text-xs text-gray-500">{(selectedAddress as any).phone}</div>
+                        )}
                         {selectedAddress.isDefault && <span className="text-xs text-teal-600 font-semibold">Default</span>}
                       </div>
                       <button
@@ -472,7 +476,6 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           backdropFilter: 'blur(8px)', // Modern blur effect
           animation: 'fadeInOverlay 0.4s ease-out',
         }}>
-          {console.log('🚀 Checkmark overlay is now visible!')}
           <div style={{ 
             textAlign: 'center', 
             display: 'flex', 

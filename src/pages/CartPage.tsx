@@ -16,6 +16,7 @@ interface CartPageProps {
   deliveryAllowed?: boolean;
   deliveryCheckPending?: boolean;
   onOrderPlaced?: (success: boolean, message: string) => void;
+  onNavigateToOrders?: () => void;
 }
 
 const CartPage: React.FC<CartPageProps> = ({
@@ -25,7 +26,8 @@ const CartPage: React.FC<CartPageProps> = ({
   disableOrderReview,
   deliveryAllowed = true,
   deliveryCheckPending = false,
-  onOrderPlaced
+  onOrderPlaced,
+  onNavigateToOrders
 }) => {
   const [reviewOpen, setReviewOpen] = useState(false);
   const { t, language, languageDisplay } = useLanguage();
@@ -172,6 +174,7 @@ const CartPage: React.FC<CartPageProps> = ({
         // Only trigger Firestore order placement ONCE, after animation completes
         onPlaceOrder={handlePlaceOrder}
         onClearCart={clearCart}
+        onNavigateToOrders={onNavigateToOrders}
         userId={userId}
         disableOrderReview={disableOrderReview || !userId || !!accessError || placingOrder}
         deliveryAllowed={deliveryAllowed}

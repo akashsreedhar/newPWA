@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { useAddresses } from '../hooks/useAddresses';
@@ -9,6 +8,7 @@ import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebas
 
 interface OrdersPageProps {
   userId?: string | null;
+  onNavigateToCart?: () => void;
 }
 
 interface OrderItem {
@@ -38,9 +38,8 @@ interface OrderData {
   user: string;
 }
 
-const OrdersPage: React.FC<OrdersPageProps> = ({ userId }) => {
+const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => {
   const { t } = useLanguage();
-  const navigate = useNavigate();
   const { reorderItems } = useCart();
   const { selectAddress } = useAddresses(userId);
   const [orders, setOrders] = useState<OrderData[]>([]);
@@ -203,12 +202,23 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId }) => {
       // 2. Pre-select the delivery address if available
       if (order.address && selectAddress) {
         console.log('📍 Pre-selecting address:', order.address.label);
-        selectAddress(order.address);
+        // Adapt order address format to match the addresses hook format
+        const adaptedAddress = {
+          id: `order_addr_${Date.now()}`, // Temporary ID for this session
+          label: order.address.label,
+          details: order.address.details,
+          phone: order.address.phone || '',
+          address: order.address.details, // The actual address string
+          isDefault: false // Don't set as default, just select for this session
+        };
+        selectAddress(adaptedAddress);
       }
       
       // 3. Navigate to cart page
       console.log('🚀 Navigating to cart page');
-      navigate('/cart');
+      if (onNavigateToCart) {
+        onNavigateToCart();
+      }
       
     } catch (error) {
       console.error('❌ Error during reorder:', error);

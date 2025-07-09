@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { CartProvider, useCart } from './contexts/CartContext';
 import BottomNavigation from './components/BottomNavigation';
@@ -7,7 +6,7 @@ import HomePage from './pages/HomePage';
 import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
 import AccountPage from './pages/AccountPage';
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from './hooks/useAuth.ts';
 
 
 // --- Device Fingerprint Helper ---
@@ -50,8 +49,7 @@ function setLastDeliveryCheck(userId: string, result: any) {
 }
 
 const AppInner: React.FC = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const [tab, setTab] = useState('home');
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [deliveryAllowed, setDeliveryAllowed] = useState(true);
   const [deliveryCheckPending, setDeliveryCheckPending] = useState(false);
@@ -60,34 +58,6 @@ const AppInner: React.FC = () => {
   const [tgAccessError, setTgAccessError] = useState("");
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
-
-  // Determine active tab from current route
-  const getActiveTabFromPath = (pathname: string) => {
-    if (pathname === '/cart') return 'cart';
-    if (pathname === '/orders') return 'orders';
-    if (pathname === '/account') return 'account';
-    return 'home'; // default
-  };
-
-  const activeTab = getActiveTabFromPath(location.pathname);
-
-  // Handle tab changes by navigating to the appropriate route
-  const handleTabChange = (tab: string) => {
-    switch (tab) {
-      case 'home':
-        navigate('/');
-        break;
-      case 'cart':
-        navigate('/cart');
-        break;
-      case 'orders':
-        navigate('/orders');
-        break;
-      case 'account':
-        navigate('/account');
-        break;
-    }
-  };
 
   // Cart count for badge
   const { cartItems } = useCart();
@@ -102,7 +72,22 @@ const AppInner: React.FC = () => {
     // Allow bypass in dev mode (localhost or VITE_DEV_MODE)
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const devMode = import.meta.env.VITE_DEV_MODE === 'true' || import.meta.env.MODE !== 'production';
+    
+    console.log('🔍 Telegram access check:', {
+      isLocalhost,
+      VITE_DEV_MODE: import.meta.env.VITE_DEV_MODE,
+      MODE: import.meta.env.MODE,
+      devMode,
+      hostname: window.location.hostname,
+      hasWindow: !!window,
+      hasTelegram: !!(window as any).Telegram,
+      hasWebApp: !!((window as any).Telegram && (window as any).Telegram.WebApp),
+      hasInitData: !!((window as any).Telegram && (window as any).Telegram.WebApp && (window as any).Telegram.WebApp.initData),
+      initDataLength: (window as any).Telegram && (window as any).Telegram.WebApp && (window as any).Telegram.WebApp.initData ? (window as any).Telegram.WebApp.initData.length : 0
+    });
+    
     if (isLocalhost || devMode) {
+      console.log('✅ Dev mode detected, bypassing Telegram restriction');
       setTgAccessError("");
       return;
     }
@@ -112,9 +97,13 @@ const AppInner: React.FC = () => {
       !(window as any).Telegram.WebApp.initData ||
       (window as any).Telegram.WebApp.initData.length < 10
     ) {
+      console.log('❌ Telegram access check failed');
       setTgAccessError(
         "❌ This app can only be used inside Telegram. Please open it from the bot."
       );
+    } else {
+      console.log('✅ Telegram access check passed');
+      setTgAccessError("");
     }
   }, []);
 
@@ -169,7 +158,9 @@ const AppInner: React.FC = () => {
                   }
                 );
                 const data = await response.json();
-                setLastDeliveryCheck(userId, data);
+                if (userId) {
+                  setLastDeliveryCheck(userId, data);
+                }
                 setDeliveryAllowed(data.allowed);
                 setDeliveryMessage(data.allowed ? "" : (data.message || "You are outside the delivery area."));
                 setDeliveryErrorDetails("");
@@ -223,7 +214,9 @@ const AppInner: React.FC = () => {
                 }
               );
               const data = await response.json();
-              setLastDeliveryCheck(userId, data);
+              if (userId) {
+                setLastDeliveryCheck(userId, data);
+              }
               setDeliveryAllowed(data.allowed);
               setDeliveryMessage(data.allowed ? "" : (data.message || "You are outside the delivery area."));
               setDeliveryErrorDetails("");
@@ -382,26 +375,27 @@ const AppInner: React.FC = () => {
 
       {/* Main content */}
       <div className="pt-2">
-        {activeTab === 'home' && (
+        {tab === 'home' && (
           <HomePage />
         )}
-        {activeTab === 'cart' && (
+        {tab === 'cart' && (
           <CartPage
             userId={userId}
             disableOrderReview={disableOrderReview}
             deliveryAllowed={deliveryAllowed}
             deliveryCheckPending={deliveryCheckPending}
             onOrderPlaced={handleOrderPlaced}
+            onNavigateToOrders={() => setTab('orders')}
           />
         )}
-        {activeTab === 'orders' && (
-          <OrdersPage userId={userId} />
+        {tab === 'orders' && (
+          <OrdersPage userId={userId} onNavigateToCart={() => setTab('cart')} />
         )}
-        {activeTab === 'account' && (
+        {tab === 'account' && (
           <AccountPage userId={userId} />
         )}
       </div>
-      <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} cartCount={cartItems.length} />
+      <BottomNavigation activeTab={tab} onTabChange={setTab} cartCount={cartItems.length} />
     </div>
   );
 };
