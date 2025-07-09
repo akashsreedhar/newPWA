@@ -283,8 +283,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               <h2 className="text-xl font-bold text-center mb-4">🛒 Review Your Order</h2>
 
               <div className="flex-1 min-h-0 overflow-y-auto pb-4" style={{marginBottom: '5.5rem'}}>
-                {/* Registration warning */}
-                {disableOrderReview && (
+                {/* Registration warning - only show if not in progress and actually disabled */}
+                {disableOrderReview && step === 'idle' && (
                   <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded mb-4">
                     {loading && step === 'idle' ? 'Checking registration status...' : (
                       <>

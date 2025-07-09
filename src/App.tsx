@@ -259,7 +259,9 @@ const AppInner: React.FC = () => {
   // Bypass registration requirement in dev mode (localhost or VITE_DEV_MODE)
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const devMode = import.meta.env.VITE_DEV_MODE === 'true' || import.meta.env.MODE !== 'production';
-  const disableOrderReview = authLoading || (!isUserRegistered && !isLocalhost && !devMode);
+  // Only disable order review if we're still loading initially OR if user is definitely not registered
+  // Don't disable if user is already authenticated (prevent flickering during operations)
+  const disableOrderReview = (authLoading && !userId) || (!isUserRegistered && !isLocalhost && !devMode);
 
   // --- Order placement feedback ---
   const handleOrderPlaced = (success: boolean, message: string) => {
