@@ -12,7 +12,9 @@ interface Product {
   name_manglish?: string;
   name?: string;
   category?: string;
-  price: number;
+  price?: number; // Legacy field - optional
+  mrp?: number; // Maximum Retail Price
+  sellingPrice?: number; // Actual selling price
   imageUrl?: string;
   available?: boolean;
   description?: string;
@@ -237,8 +239,7 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
       const snap = await getDocs(collection(db, 'products'));
       const fetchedProducts: Product[] = snap.docs.map(doc => ({ 
         id: doc.id, 
-        ...doc.data(),
-        price: doc.data().price || 0
+        ...doc.data()
       } as Product));
       
       console.log('📦 [SearchPage] Fetched products:', fetchedProducts.length);
@@ -275,10 +276,10 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
     // Sort results
     switch (sortBy) {
       case 'price_low':
-        results.sort((a, b) => a.price - b.price);
+        results.sort((a, b) => (a.sellingPrice || 0) - (b.sellingPrice || 0));
         break;
       case 'price_high':
-        results.sort((a, b) => b.price - a.price);
+        results.sort((a, b) => (b.sellingPrice || 0) - (a.sellingPrice || 0));
         break;
       case 'name':
         results.sort((a, b) => (a.name_en || '').localeCompare(b.name_en || ''));
@@ -537,7 +538,8 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                     name={product.name_en || 'Unknown Product'}
                     malayalamName={product.name_ml}
                     manglishName={product.name_manglish}
-                    price={product.price || 0}
+                    mrp={product.mrp || 0}
+                    sellingPrice={product.sellingPrice || 0}
                     imageUrl={product.imageUrl}
                     netQuantity={product.netQuantity}
                     onProductClick={handleProductClick}

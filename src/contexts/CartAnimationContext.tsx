@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 interface CartAnimationContextType {
-  showAnimation: (productName?: string) => void;
+  showAnimation: (productName?: string, savings?: number) => void;
   isAnimating: boolean;
   currentProductName?: string;
+  currentSavings?: number;
   onAnimationComplete: () => void;
 }
 
@@ -12,15 +13,18 @@ const CartAnimationContext = createContext<CartAnimationContextType | undefined>
 export const CartAnimationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [currentProductName, setCurrentProductName] = useState<string | undefined>();
+  const [currentSavings, setCurrentSavings] = useState<number | undefined>();
 
-  const showAnimation = (productName?: string) => {
+  const showAnimation = (productName?: string, savings?: number) => {
     setCurrentProductName(productName);
+    setCurrentSavings(savings);
     setIsAnimating(true);
   };
 
   const onAnimationComplete = () => {
     setIsAnimating(false);
     setCurrentProductName(undefined);
+    setCurrentSavings(undefined);
   };
 
   return (
@@ -28,6 +32,7 @@ export const CartAnimationProvider: React.FC<{ children: ReactNode }> = ({ child
       showAnimation,
       isAnimating,
       currentProductName,
+      currentSavings,
       onAnimationComplete
     }}>
       {children}

@@ -79,7 +79,7 @@ const AppInner: React.FC = () => {
   const { cartItems } = useCart();
   
   // Cart animation hook
-  const { isAnimating, currentProductName, onAnimationComplete } = useCartAnimation();
+  const { isAnimating, currentProductName, currentSavings, onAnimationComplete } = useCartAnimation();
 
   // Generate fingerprint on mount
   useEffect(() => {
@@ -579,6 +579,7 @@ const AppInner: React.FC = () => {
         show={isAnimating} 
         onComplete={onAnimationComplete} 
         productName={currentProductName}
+        savings={currentSavings}
       />
     </div>
   );

@@ -104,7 +104,10 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
 
 
 
-  const total = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  // Calculate pricing values with MRP and savings
+  const total = cartItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price) * item.quantity), 0);
+  const totalMRP = cartItems.reduce((sum, item) => sum + ((item.mrp || item.sellingPrice || item.price) * item.quantity), 0);
+  const totalSavings = totalMRP - total;
   const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
 
@@ -375,16 +378,49 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 <div className="mb-4">
                   <div className="font-semibold mb-2">Order Items ({itemCount})</div>
                   <div className="max-h-48 overflow-y-auto divide-y divide-gray-200 mb-2">
-                    {cartItems.map((item, idx) => (
-                      <div key={item.id || idx} className="flex justify-between py-2">
-                        <div>
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-xs text-gray-500">₹{item.price} × {item.quantity}</div>
+                    {cartItems.map((item, idx) => {
+                      const finalMrp = item.mrp || item.sellingPrice || item.price;
+                      const finalSellingPrice = item.sellingPrice || item.price;
+                      const hasOffer = finalMrp > finalSellingPrice;
+                      
+                      return (
+                        <div key={item.id || idx} className="flex justify-between py-2">
+                          <div>
+                            <div className="font-medium">{item.name}</div>
+                            {hasOffer ? (
+                              <div className="flex flex-col text-xs">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-gray-600">₹{finalSellingPrice} × {item.quantity}</span>
+                                  <span className="bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
+                                    {Math.round(((finalMrp - finalSellingPrice) / finalMrp) * 100)}% OFF
+                                  </span>
+                                </div>
+                                <span className="text-gray-500 line-through">₹{finalMrp} × {item.quantity}</span>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500">₹{finalSellingPrice} × {item.quantity}</div>
+                            )}
+                          </div>
+                          <div className="font-semibold text-teal-600">₹{(finalSellingPrice * item.quantity).toFixed(2)}</div>
                         </div>
-                        <div className="font-semibold text-teal-600">₹{(item.price * item.quantity).toFixed(2)}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
+                  
+                  {/* Show MRP and savings if there are any savings */}
+                  {totalSavings > 0 && (
+                    <div className="bg-green-50 rounded p-2 mb-2 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">MRP Total</span>
+                        <span className="text-gray-500 line-through">₹{totalMRP.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-green-600 font-medium">You Save</span>
+                        <span className="text-green-600 font-semibold">₹{totalSavings.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="flex justify-between items-center bg-teal-50 rounded p-2 mt-2">
                     <span className="font-semibold">Total</span>
                     <span className="font-bold text-lg text-teal-700">₹{total.toFixed(2)}</span>

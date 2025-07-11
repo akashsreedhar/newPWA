@@ -14,6 +14,8 @@ interface Product {
   name?: string;
   category?: string;
   price?: number;
+  mrp?: number;
+  sellingPrice?: number;
   imageUrl?: string;
   available?: boolean;
   description?: string;
@@ -388,6 +390,8 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
                   malayalamName={product.name_ml}
                   manglishName={product.name_manglish}
                   price={product.price || 0}
+                  mrp={product.mrp}
+                  sellingPrice={product.sellingPrice}
                   imageUrl={product.imageUrl}
                   netQuantity={product.netQuantity}
                   onProductClick={handleProductClick}

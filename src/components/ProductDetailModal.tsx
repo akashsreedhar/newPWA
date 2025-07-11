@@ -17,7 +17,9 @@ interface ProductDetailModalProps {
     name_ml?: string;
     name_manglish?: string;
     name?: string;
-    price: number;
+    price?: number; // Legacy field - optional
+    mrp?: number; // Maximum Retail Price
+    sellingPrice?: number; // Actual selling price
     imageUrl?: string;
     description?: string;
     category?: string;
@@ -116,6 +118,10 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
     manglishName: product.name_manglish || ''
   });
 
+  // Calculate pricing values for display
+  const finalMrp = product.mrp || 0;
+  const finalSellingPrice = product.sellingPrice || 0;
+
   const handleAddToCart = () => {
     const productName = formatProductName({
       name: product.name_en || product.name || '',
@@ -123,14 +129,22 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
       manglishName: product.name_manglish || ''
     });
     
-    showAnimation(productName);
+    // Calculate pricing values - use sellingPrice as primary
+    const finalMrp = product.mrp || 0;
+    const finalSellingPrice = product.sellingPrice || 0;
+    const hasOffer = finalMrp > finalSellingPrice;
+    const savings = hasOffer ? finalMrp - finalSellingPrice : 0;
+    
+    showAnimation(productName, savings);
     
     addToCart({
       id: product.id,
       name: product.name_en || product.name || '',
       malayalamName: product.name_ml || '',
       manglishName: product.name_manglish || '',
-      price: product.price,
+      price: finalSellingPrice, // Use selling price as price for legacy compatibility
+      mrp: finalMrp,
+      sellingPrice: finalSellingPrice,
       unit: 'piece',
       image: product.imageUrl || '',
       imageUrl: product.imageUrl || ''
@@ -147,15 +161,18 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-t-3xl sm:rounded-b-3xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center">
+      <div className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-t-3xl sm:rounded-b-3xl flex flex-col overflow-hidden relative">
         {/* Header */}
-        <div className="flex-shrink-0 bg-white z-10 flex items-center justify-between p-4 border-b border-gray-100">
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <X size={20} />
+        <div className="flex-shrink-0 bg-white z-20 flex items-center justify-between p-4 border-b border-gray-100 relative">
+          <button 
+            onClick={onClose} 
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors z-30 bg-white shadow-sm border border-gray-200"
+          >
+            <X size={20} className="text-gray-600" />
           </button>
-          <h2 className="text-lg font-semibold text-gray-900">Product Details</h2>
-          <div className="w-9"></div> {/* Spacer for centering */}
+          <h2 className="text-lg font-semibold text-gray-900 absolute left-1/2 transform -translate-x-1/2">Product Details</h2>
+          <div className="w-9"></div> {/* Spacer for balance */}
         </div>
 
         {/* Scrollable Content */}
@@ -186,7 +203,25 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
               <h1 className="text-xl font-semibold text-gray-900 leading-tight">{displayName}</h1>
               <p className="text-sm text-gray-500 mt-1">{product.netQuantity || '1 piece'}</p>
               <div className="flex items-center justify-between mt-3">
-                <span className="text-2xl font-bold text-green-600">₹{product.price}</span>
+                <div className="flex flex-col">
+                  {finalMrp > 0 && finalSellingPrice > 0 && finalMrp > finalSellingPrice ? (
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-bold text-green-600">₹{finalSellingPrice}</span>
+                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">
+                          {Math.round(((finalMrp - finalSellingPrice) / finalMrp) * 100)}% OFF
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-sm text-gray-500 line-through">₹{finalMrp}</span>
+                        <span className="text-xs text-gray-600">MRP</span>
+                      </div>
+                      <span className="text-xs text-green-600 font-medium">You save ₹{finalMrp - finalSellingPrice}</span>
+                    </div>
+                  ) : (
+                    <span className="text-2xl font-bold text-green-600">₹{finalSellingPrice || 0}</span>
+                  )}
+                </div>
                 
                 {/* Add to Cart Button */}
                 {quantity === 0 ? (
@@ -318,7 +353,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                       name={similarProduct.name_en || similarProduct.name || 'Unknown Product'}
                       malayalamName={similarProduct.name_ml}
                       manglishName={similarProduct.name_manglish}
-                      price={similarProduct.price || 0}
+                      mrp={similarProduct.mrp || 0}
+                      sellingPrice={similarProduct.sellingPrice || 0}
                       imageUrl={similarProduct.imageUrl}
                       netQuantity={similarProduct.netQuantity}
                       onProductClick={handleSimilarProductClick}

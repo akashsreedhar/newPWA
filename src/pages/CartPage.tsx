@@ -37,7 +37,7 @@ const CartPage: React.FC<CartPageProps> = ({
   const [validatingPrices, setValidatingPrices] = useState(false);
   const [validationSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const { t, language, languageDisplay } = useLanguage();
-  const { cartItems, updateQuantity, removeFromCart, getCartTotal, clearCart, validatePrices, updateCartPrices } = useCart();
+  const { cartItems, updateQuantity, removeFromCart, getCartTotal, getTotalMRP, getTotalSavings, clearCart, validatePrices, updateCartPrices } = useCart();
 
   // Initialize analytics
   const analytics = useCallback(() => PriceValidationAnalytics.getInstance(), []);
@@ -347,9 +347,26 @@ const CartPage: React.FC<CartPageProps> = ({
                 {getSecondaryName(item) && (
                   <p className="text-xs text-gray-500 leading-tight break-words">{getSecondaryName(item)}</p>
                 )}
-                <p className="text-sm sm:text-lg font-semibold text-gray-800 mt-0.5 sm:mt-1">
-                  ₹{item.price} <span className="text-xs sm:text-sm text-gray-500">/{t(item.unit)}</span>
-                </p>
+                <div className="mt-0.5 sm:mt-1">
+                  {item.mrp && item.sellingPrice && item.mrp > item.sellingPrice ? (
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm sm:text-lg font-semibold text-gray-800">₹{item.sellingPrice}</span>
+                        <span className="bg-green-100 text-green-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                          {Math.round(((item.mrp - item.sellingPrice) / item.mrp) * 100)}% OFF
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500 line-through">₹{item.mrp}</span>
+                        <span className="text-xs sm:text-sm text-gray-500">/{t(item.unit)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm sm:text-lg font-semibold text-gray-800">
+                      ₹{item.sellingPrice || item.price} <span className="text-xs sm:text-sm text-gray-500">/{t(item.unit)}</span>
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
@@ -381,6 +398,20 @@ const CartPage: React.FC<CartPageProps> = ({
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4 mt-4 sm:mt-6">
           <div className="space-y-2 sm:space-y-3">
+            {/* Show MRP and savings if there are any savings */}
+            {getTotalSavings() > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-sm sm:text-base text-gray-600">MRP Total</span>
+                  <span className="font-medium text-sm sm:text-base text-gray-500 line-through">₹{getTotalMRP()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm sm:text-base text-green-600 font-medium">You Save</span>
+                  <span className="font-semibold text-sm sm:text-base text-green-600">₹{getTotalSavings()}</span>
+                </div>
+                <hr className="border-gray-200" />
+              </>
+            )}
             <div className="flex justify-between">
               <span className="text-sm sm:text-base text-gray-600">{t('totalAmount')}</span>
               <span className="font-medium text-sm sm:text-base">₹{getCartTotal()}</span>

@@ -6,7 +6,9 @@ export interface CartItem {
   name: string;
   malayalamName: string;
   manglishName: string;
-  price: number;
+  price: number; // Keep for Firebase/legacy compatibility - will equal sellingPrice
+  mrp: number; // Maximum Retail Price
+  sellingPrice: number; // Actual selling price
   quantity: number;
   unit: string;
   image: string;
@@ -31,6 +33,8 @@ interface CartContextType {
   placeOrder: () => void;
   getCartTotal: () => number;
   getItemCount: () => number;
+  getTotalSavings: () => number;
+  getTotalMRP: () => number;
   reorderItems: (items: CartItem[]) => void;
   validatePrices: () => Promise<PriceValidationResult>;
   updateCartPrices: (updatedItems: CartItem[]) => void;
@@ -77,7 +81,17 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       // Always ensure both image and imageUrl are set for cart compatibility
       const imageUrl = (item as any).imageUrl || (item as any).image || '';
       const image = (item as any).image || (item as any).imageUrl || '';
-      const itemWithImages = { ...item, image, imageUrl };
+      
+      // Ensure pricing fields are properly set
+      const itemWithComplete = { 
+        ...item, 
+        image, 
+        imageUrl,
+        // Ensure all pricing fields are set correctly
+        price: item.sellingPrice || 0, // Set price to sellingPrice for legacy compatibility
+        mrp: item.mrp || 0,
+        sellingPrice: item.sellingPrice || 0
+      };
       
       // Trigger animation callback if provided and it's a new item or showAnimation is true
       if (showAnimation && onCartItemAdded) {
@@ -92,7 +106,7 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
             : cartItem
         );
       }
-      return [...prev, { ...itemWithImages, quantity: 1 }];
+      return [...prev, { ...itemWithComplete, quantity: 1 }];
     });
   };
 
@@ -129,7 +143,31 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
   };
 
   const getCartTotal = () => {
-    return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+    return cartItems.reduce((total, item) => {
+      // Use sellingPrice as the primary price
+      const itemPrice = item.sellingPrice || 0;
+      return total + (itemPrice * item.quantity);
+    }, 0);
+  };
+
+  const getTotalSavings = () => {
+    return cartItems.reduce((savings, item) => {
+      if (item.mrp && item.sellingPrice) {
+        return savings + ((item.mrp - item.sellingPrice) * item.quantity);
+      }
+      return savings;
+    }, 0);
+  };
+
+  const getTotalMRP = () => {
+    return cartItems.reduce((total, item) => {
+      // Use MRP if available
+      if (item.mrp) {
+        return total + (item.mrp * item.quantity);
+      }
+      // Fallback to sellingPrice if MRP not available
+      return total + (item.sellingPrice * item.quantity);
+    }, 0);
   };
 
   const getItemCount = () => {
@@ -168,6 +206,8 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       placeOrder,
       getCartTotal,
       getItemCount,
+      getTotalSavings,
+      getTotalMRP,
       reorderItems,
       validatePrices,
       updateCartPrices,

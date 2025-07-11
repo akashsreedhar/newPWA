@@ -8,10 +8,11 @@ interface PersistentCartButtonProps {
 }
 
 const PersistentCartButton: React.FC<PersistentCartButtonProps> = ({ onViewCart, className = '' }) => {
-  const { cartItems, getCartTotal } = useCart();
+  const { cartItems, getCartTotal, getTotalSavings } = useCart();
   
   const itemCount = cartItems.length; // Number of unique products, not total quantity
   const total = getCartTotal();
+  const savings = getTotalSavings();
 
   // Don't show the button if cart is empty
   if (itemCount === 0) {
@@ -36,7 +37,14 @@ const PersistentCartButton: React.FC<PersistentCartButtonProps> = ({ onViewCart,
         
         <div className="flex flex-col text-left">
           <span className="text-sm font-semibold leading-tight">View Cart</span>
-          <span className="text-xs opacity-90 leading-tight">₹{total.toFixed(0)}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs opacity-90 leading-tight">₹{total.toFixed(0)}</span>
+            {savings > 0 && (
+              <span className="text-xs bg-yellow-400 text-black px-1 py-0.5 rounded-full font-bold leading-none">
+                Save ₹{savings.toFixed(0)}
+              </span>
+            )}
+          </div>
         </div>
       </button>
     </div>

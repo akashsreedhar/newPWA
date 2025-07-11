@@ -12,7 +12,9 @@ interface Product {
   name_manglish?: string;
   name?: string;
   category?: string;
-  price?: number;
+  price?: number; // Optional legacy field
+  mrp: number; // Required - Maximum Retail Price
+  sellingPrice: number; // Required - Actual selling price
   imageUrl?: string;
   available?: boolean;
   description?: string;
@@ -220,6 +222,8 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
               malayalamName={item.name_ml}
               manglishName={item.name_manglish}
               price={item.price || 0}
+              mrp={item.mrp}
+              sellingPrice={item.sellingPrice}
               imageUrl={item.imageUrl}
               netQuantity={item.netQuantity}
               onProductClick={handleProductClick}
@@ -239,7 +243,8 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
               name={item.name_en || item.name || 'Unknown Product'}
               malayalamName={item.name_ml}
               manglishName={item.name_manglish}
-              price={item.price || 0}
+              mrp={item.mrp || 0}
+              sellingPrice={item.sellingPrice || 0}
               imageUrl={item.imageUrl}
               netQuantity={item.netQuantity}
               onProductClick={handleProductClick}
@@ -254,7 +259,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
           isOpen={!!selectedProduct}
           product={{
             ...selectedProduct,
-            price: selectedProduct.price || 0
+            price: selectedProduct.sellingPrice || 0
           }}
           onClose={() => setSelectedProduct(null)}
           onProductSelect={(newProduct) => {

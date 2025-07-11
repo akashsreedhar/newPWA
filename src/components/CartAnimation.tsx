@@ -5,9 +5,10 @@ interface CartAnimationProps {
   show: boolean;
   onComplete: () => void;
   productName?: string;
+  savings?: number;
 }
 
-const CartAnimation: React.FC<CartAnimationProps> = ({ show, onComplete, productName }) => {
+const CartAnimation: React.FC<CartAnimationProps> = ({ show, onComplete, productName, savings }) => {
   const [animationState, setAnimationState] = useState<'hidden' | 'adding' | 'success' | 'celebration' | 'fadeOut'>('hidden');
 
   useEffect(() => {
@@ -162,11 +163,20 @@ const CartAnimation: React.FC<CartAnimationProps> = ({ show, onComplete, product
               
               {(animationState === 'success' || animationState === 'celebration') && (
                 <p 
-                  className={`text-sm font-medium text-green-600 transition-all duration-500 ${
+                  className={`text-sm font-medium transition-all duration-500 ${
                     animationState === 'celebration' ? 'animate-pulse' : ''
                   }`}
                 >
-                  {animationState === 'success' && productName ? productName : 'For More Offers'}
+                  {animationState === 'success' && productName ? (
+                    <span className="text-green-600">{productName}</span>
+                  ) : (
+                    <span className="text-green-600">For More Offers</span>
+                  )}
+                  {savings && savings > 0 && (
+                    <span className="block text-green-700 font-semibold mt-1">
+                      💰 You saved ₹{savings.toFixed(2)}!
+                    </span>
+                  )}
                 </p>
               )}
             </div>
