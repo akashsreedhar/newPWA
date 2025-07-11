@@ -141,7 +141,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
     // Find the product from similar products
     const selectedProduct = similarProducts.find(p => p.id === productId);
     if (selectedProduct && onProductSelect) {
-      // Pass the full product object to parent
+      // Pass the full product object to parent to update the modal
       onProductSelect(selectedProduct);
     }
   };

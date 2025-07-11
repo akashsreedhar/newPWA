@@ -17,3 +17,126 @@
   0% { transform: scaleX(0); }
   100% { transform: scaleX(1); }
 }
+
+/* Search bar pulsing animation */
+.search-pulse {
+  animation: search-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes search-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  33% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+  66% {
+    opacity: 0.4;
+    transform: scale(1.01);
+  }
+}
+
+.search-border-flow {
+  animation: border-flow 3s linear infinite;
+  background: linear-gradient(45deg, 
+    #14b8a6, #06b6d4, #3b82f6, #8b5cf6, 
+    #d946ef, #f59e0b, #ef4444, #14b8a6
+  );
+  background-size: 400% 400%;
+}
+
+@keyframes border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  75% {
+    background-position: 0% 100%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Enhanced search focus animation */
+.search-focus-glow {
+  animation: focus-glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes focus-glow {
+  0% {
+    box-shadow: 0 0 20px rgba(20, 184, 166, 0.3);
+  }
+  100% {
+    box-shadow: 0 0 40px rgba(20, 184, 166, 0.6), 
+                0 0 60px rgba(59, 130, 246, 0.4);
+  }
+}
+
+/* Sparkle animations */
+.sparkle-float {
+  animation: sparkle-float 3s ease-in-out infinite;
+}
+
+@keyframes sparkle-float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-10px) rotate(180deg);
+    opacity: 1;
+  }
+}
+
+/* Slow spin animation for outer border */
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Moving light effect */
+.moving-light {
+  animation: moving-light 2s ease-in-out infinite;
+}
+
+@keyframes moving-light {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* Typewriter cursor blink */
+.typewriter-cursor {
+  animation: typewriter-blink 1s infinite;
+}
+
+@keyframes typewriter-blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}

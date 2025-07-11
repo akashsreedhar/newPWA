@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Search, Filter, X } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
+import ProductDetailModal from '../components/ProductDetailModal';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
@@ -9,12 +10,14 @@ interface Product {
   name_en?: string;
   name_ml?: string;
   name_manglish?: string;
+  name?: string;
   category?: string;
-  price?: number;
+  price: number;
   imageUrl?: string;
   available?: boolean;
   description?: string;
   netQuantity?: string;
+  manufacturerNameAddress?: string;
 }
 
 interface SearchPageProps {
@@ -224,6 +227,7 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
   const [showFilters, setShowFilters] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // Fetch products
   useEffect(() => {
@@ -233,7 +237,8 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
       const snap = await getDocs(collection(db, 'products'));
       const fetchedProducts: Product[] = snap.docs.map(doc => ({ 
         id: doc.id, 
-        ...doc.data() 
+        ...doc.data(),
+        price: doc.data().price || 0
       } as Product));
       
       console.log('📦 [SearchPage] Fetched products:', fetchedProducts.length);
@@ -242,6 +247,14 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
     }
     fetchProducts();
   }, []);
+
+  // Handle product click to open detail modal
+  const handleProductClick = (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      setSelectedProduct(product);
+    }
+  };
 
   // Search and filter products
   const filteredProducts = useMemo(() => {
@@ -262,10 +275,10 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
     // Sort results
     switch (sortBy) {
       case 'price_low':
-        results.sort((a, b) => (a.price || 0) - (b.price || 0));
+        results.sort((a, b) => a.price - b.price);
         break;
       case 'price_high':
-        results.sort((a, b) => (b.price || 0) - (a.price || 0));
+        results.sort((a, b) => b.price - a.price);
         break;
       case 'name':
         results.sort((a, b) => (a.name_en || '').localeCompare(b.name_en || ''));
@@ -334,24 +347,50 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
           </button>
           
           <div className="flex-1 relative">
-            <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            {/* Animated gradient border */}
+            <div className="absolute inset-0 rounded-2xl search-border-flow p-0.5 shadow-lg">
+              <div className="w-full h-full bg-white rounded-2xl"></div>
+            </div>
+            
+            {/* Pulsing glow effect */}
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-teal-400/30 via-blue-500/30 to-purple-600/30 search-pulse blur-md -z-10"></div>
+            
+            {/* Inner glow */}
+            <div className="absolute inset-1 rounded-2xl bg-gradient-to-r from-teal-50 via-blue-50 to-purple-50 opacity-50"></div>
+            
+            {/* Professional search icon */}
+            <div className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20">
+              <Search size={18} className="text-gray-400 hover:text-teal-500 transition-colors" strokeWidth={2} />
+            </div>
+            
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
-              placeholder="Search for products..."
-              className="w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+              placeholder="Search in English, Malayalam or Manglish... (e.g., Rice, അരി, Ari)"
+              className="relative w-full pl-12 sm:pl-13 pr-12 py-3.5 sm:py-4 bg-white/95 backdrop-blur-sm border-0 rounded-2xl focus:outline-none focus:ring-3 focus:ring-teal-500/50 focus:bg-white text-sm sm:text-base font-medium text-gray-700 placeholder-gray-500 shadow-inner z-10 transition-all duration-300"
+              style={{
+                backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%)',
+              }}
               autoFocus
             />
+            
             {searchQuery && (
               <button
                 onClick={clearSearch}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
               >
-                <X size={18} />
+                <X size={16} className="text-gray-500" strokeWidth={2} />
               </button>
             )}
+            
+            {/* Professional floating elements */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
+              <div className="absolute top-3 right-16 w-1 h-1 bg-teal-400 rounded-full animate-ping opacity-40"></div>
+              <div className="absolute top-5 right-20 w-1.5 h-1.5 bg-blue-400 rounded-full sparkle-float opacity-30"></div>
+              <div className="absolute bottom-4 right-18 w-1 h-1 bg-purple-400 rounded-full animate-bounce opacity-35" style={{ animationDelay: '1s' }}></div>
+            </div>
             
             {/* Search Suggestions Dropdown */}
             {showSuggestions && suggestions.length > 0 && (
@@ -360,9 +399,9 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                   <button
                     key={index}
                     onClick={() => handleSuggestionClick(suggestion)}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 text-sm"
+                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 text-sm flex items-center gap-2"
                   >
-                    <Search size={14} className="inline mr-2 text-gray-400" />
+                    <Search size={16} className="text-gray-400" strokeWidth={2} />
                     {suggestion}
                   </button>
                 ))}
@@ -430,7 +469,7 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                   className="p-4 bg-white border border-gray-200 rounded-xl text-left hover:bg-gray-50 hover:border-teal-200 transition-all group"
                 >
                   <Search size={16} className="text-gray-400 group-hover:text-teal-500 mb-2" />
-                  <p className="font-medium text-gray-800 text-sm">{term}</p>
+                  <span className="text-sm font-medium text-gray-700">{term}</span>
                 </button>
               ))}
             </div>
@@ -442,12 +481,12 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                   key={category}
                   onClick={() => {
                     setSelectedCategory(category);
-                    setSearchQuery(' '); // Trigger search with empty query but filter applied
+                    setSearchQuery('');
                   }}
                   className="p-4 bg-white border border-gray-200 rounded-xl text-left hover:bg-gray-50 hover:border-teal-200 transition-all"
                 >
-                  <p className="font-medium text-gray-800 text-sm">{category}</p>
-                  <p className="text-xs text-gray-500 mt-1">Browse all {category.toLowerCase()}</p>
+                  <div className="text-sm font-medium text-gray-700">{category}</div>
+                  <div className="text-xs text-gray-500 mt-1">Browse products</div>
                 </button>
               ))}
             </div>
@@ -476,7 +515,7 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-800">
                 {filteredProducts.length > 0 ? (
-                  <>Search Results ({filteredProducts.length})</>
+                  `${filteredProducts.length} Results Found`
                 ) : (
                   'No Results Found'
                 )}
@@ -501,6 +540,7 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                     price={product.price || 0}
                     imageUrl={product.imageUrl}
                     netQuantity={product.netQuantity}
+                    onProductClick={handleProductClick}
                   />
                 ))}
               </div>
@@ -521,11 +561,11 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                 <div className="mt-6">
                   <p className="text-sm text-gray-600 mb-3">Try these popular searches:</p>
                   <div className="flex flex-wrap gap-2 justify-center">
-                    {popularSearches.slice(0, 6).map(term => (
+                    {popularSearches.slice(0, 4).map(term => (
                       <button
                         key={term}
                         onClick={() => handleSearch(term)}
-                        className="px-3 py-1 bg-teal-50 text-teal-600 rounded-full text-sm hover:bg-teal-100 transition-colors"
+                        className="px-3 py-1 bg-teal-100 text-teal-700 rounded-full text-sm hover:bg-teal-200 transition-colors"
                       >
                         {term}
                       </button>
@@ -552,6 +592,14 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
           </div>
         )}
       </div>
+
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        isOpen={selectedProduct !== null}
+        onClose={() => setSelectedProduct(null)}
+        product={selectedProduct}
+        onProductSelect={(product) => setSelectedProduct(product)}
+      />
     </div>
   );
 };
