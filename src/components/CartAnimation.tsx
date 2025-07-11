@@ -157,7 +157,7 @@ const CartAnimation: React.FC<CartAnimationProps> = ({ show, onComplete, product
               >
                 {animationState === 'adding' ? '✨ Adding magic...' : 
                  animationState === 'success' ? '🎉 Added to cart!' :
-                 '🛍️ Keep shopping for more deals!'}
+                 '🛍️ Keep shopping  !'}
               </h3>
               
               {productName && (animationState === 'success' || animationState === 'celebration') && (
