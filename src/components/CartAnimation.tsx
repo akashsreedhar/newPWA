@@ -160,13 +160,13 @@ const CartAnimation: React.FC<CartAnimationProps> = ({ show, onComplete, product
                  '🛍️ Keep shopping  !'}
               </h3>
               
-              {productName && (animationState === 'success' || animationState === 'celebration') && (
+              {(animationState === 'success' || animationState === 'celebration') && (
                 <p 
                   className={`text-sm font-medium text-green-600 transition-all duration-500 ${
                     animationState === 'celebration' ? 'animate-pulse' : ''
                   }`}
                 >
-                  {productName}
+                  {animationState === 'success' && productName ? productName : 'For More Offers'}
                 </p>
               )}
             </div>
