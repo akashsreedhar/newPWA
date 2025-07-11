@@ -41,7 +41,7 @@ const PersistentCartButton: React.FC<PersistentCartButtonProps> = ({ onViewCart,
             <span className="text-xs opacity-90 leading-tight">₹{total.toFixed(0)}</span>
             {savings > 0 && (
               <span className="text-xs bg-yellow-400 text-black px-1 py-0.5 rounded-full font-bold leading-none">
-                Save ₹{savings.toFixed(0)}
+                Saved ₹{savings.toFixed(0)}
               </span>
             )}
           </div>

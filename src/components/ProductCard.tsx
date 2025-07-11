@@ -43,7 +43,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
     });
     
     // Calculate savings for animation
-    const savings = hasOffer ? finalMrp - finalSellingPrice : 0;
+    const savings = hasOffer ? finalMrp - finalSellingPrice : undefined;
     
     showAnimation(productName, savings);
     
