@@ -231,9 +231,6 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   if (loading) {
     return (
       <div className="bg-gray-50 min-h-screen pb-20 sm:pb-24">
-        <div className="bg-white border-b border-gray-200 p-3 sm:p-4">
-          <h1 className="text-lg sm:text-xl font-semibold text-gray-800">{t('orders')}</h1>
-        </div>
         <div className="p-3 sm:p-4 flex items-center justify-center py-12">
           <div className="text-center">
             <div className="animate-spin h-8 w-8 border-4 border-teal-500 border-t-transparent rounded-full mx-auto mb-4"></div>
@@ -247,9 +244,6 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   if (error) {
     return (
       <div className="bg-gray-50 min-h-screen pb-20 sm:pb-24">
-        <div className="bg-white border-b border-gray-200 p-3 sm:p-4">
-          <h1 className="text-lg sm:text-xl font-semibold text-gray-800">{t('orders')}</h1>
-        </div>
         <div className="p-3 sm:p-4 flex items-center justify-center py-12">
           <div className="text-center">
             <p className="text-red-600 mb-4">{error}</p>
@@ -267,10 +261,6 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20 sm:pb-24">
-      <div className="bg-white border-b border-gray-200 p-3 sm:p-4">
-        <h1 className="text-lg sm:text-xl font-semibold text-gray-800">{t('orders')}</h1>
-      </div>
-
       <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
         {orders.length === 0 ? (
           <div className="text-center py-12">

@@ -3,9 +3,26 @@ import { Search, MapPin, ShoppingCart } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  searchTerm?: string;
+  onSearchChange?: (term: string) => void;
+  onSearchFocus?: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ searchTerm = '', onSearchChange, onSearchFocus }) => {
   const { t } = useLanguage();
   const { getItemCount } = useCart();
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    console.log('🔍 [Header] Search term changed:', value);
+    onSearchChange?.(value);
+  };
+
+  const handleSearchFocus = () => {
+    console.log('🔍 [Header] Search focused');
+    onSearchFocus?.();
+  };
 
   return (
     <div className="bg-white shadow-sm border-b border-gray-100 px-3 sm:px-4 py-3">
@@ -28,6 +45,9 @@ const Header: React.FC = () => {
         <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5" />
         <input
           type="text"
+          value={searchTerm}
+          onChange={handleSearchChange}
+          onFocus={handleSearchFocus}
           placeholder={t('searchPlaceholder')}
           className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm sm:text-base"
         />

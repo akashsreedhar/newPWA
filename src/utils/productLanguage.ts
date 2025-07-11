@@ -26,38 +26,66 @@ export const setProductLanguageSettings = (settings: ProductLanguageSettings): v
 export const getProductDisplayName = (
   product: {
     name?: string;
+    name_en?: string;
     malayalamName?: string;
+    name_ml?: string;
     manglishName?: string;
+    name_manglish?: string;
   },
   settings?: ProductLanguageSettings
 ): string => {
   const currentSettings = settings || getProductLanguageSettings();
   
+  // Support both old and new field names for compatibility
+  const englishName = product.name || product.name_en;
+  const malayalamName = product.malayalamName || product.name_ml;
+  const manglishName = product.manglishName || product.name_manglish;
+  
+  console.log('🏷️ [productLanguage] Processing product with names:', {
+    englishName,
+    malayalamName,
+    manglishName,
+    mode: currentSettings.mode,
+    singleLanguage: currentSettings.singleLanguage
+  });
+  
   switch (currentSettings.mode) {
     case 'english-malayalam':
-      return product.name && product.malayalamName 
-        ? `${product.name} / ${product.malayalamName}`
-        : product.name || product.malayalamName || 'Unknown Product';
+      const result1 = englishName && malayalamName 
+        ? `${englishName} / ${malayalamName}`
+        : englishName || malayalamName || manglishName || 'Unknown Product';
+      console.log('🏷️ [productLanguage] English-Malayalam result:', result1);
+      return result1;
     
     case 'english-manglish':
-      return product.name && product.manglishName 
-        ? `${product.name} / ${product.manglishName}`
-        : product.name || product.manglishName || 'Unknown Product';
+      const result2 = englishName && manglishName 
+        ? `${englishName} / ${manglishName}`
+        : englishName || manglishName || malayalamName || 'Unknown Product';
+      console.log('🏷️ [productLanguage] English-Manglish result:', result2);
+      return result2;
     
     case 'single':
+      let singleResult;
       switch (currentSettings.singleLanguage) {
         case 'english':
-          return product.name || 'Unknown Product';
+          singleResult = englishName || malayalamName || manglishName || 'Unknown Product';
+          break;
         case 'malayalam':
-          return product.malayalamName || product.name || 'Unknown Product';
+          singleResult = malayalamName || englishName || manglishName || 'Unknown Product';
+          break;
         case 'manglish':
-          return product.manglishName || product.name || 'Unknown Product';
+          singleResult = manglishName || englishName || malayalamName || 'Unknown Product';
+          break;
         default:
-          return product.name || 'Unknown Product';
+          singleResult = englishName || malayalamName || manglishName || 'Unknown Product';
       }
+      console.log('🏷️ [productLanguage] Single language result:', singleResult);
+      return singleResult;
     
     default:
-      return product.name || 'Unknown Product';
+      const defaultResult = englishName || malayalamName || manglishName || 'Unknown Product';
+      console.log('🏷️ [productLanguage] Default result:', defaultResult);
+      return defaultResult;
   }
 };
 

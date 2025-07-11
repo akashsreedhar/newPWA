@@ -7,9 +7,10 @@ interface CategoryCardProps {
   manglishName: string;
   icon: string;
   color: string;
+  onClick?: (categoryName: string) => void;
 }
 
-const CategoryCard: React.FC<CategoryCardProps> = ({ name, malayalamName, manglishName, icon, color }) => {
+const CategoryCard: React.FC<CategoryCardProps> = ({ name, malayalamName, manglishName, icon, color, onClick }) => {
   const { language, languageDisplay } = useLanguage();
 
   const getDisplayText = () => {
@@ -33,7 +34,10 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ name, malayalamName, mangli
   const displayText = getDisplayText();
 
   return (
-    <div className="flex flex-col items-center p-3 sm:p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow min-h-[110px] sm:min-h-[130px] overflow-hidden">
+    <div 
+      className="flex flex-col items-center p-3 sm:p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow min-h-[110px] sm:min-h-[130px] overflow-hidden cursor-pointer"
+      onClick={() => onClick?.(name)}
+    >
       <div className={`w-12 h-12 sm:w-16 sm:h-16 ${color} rounded-full flex items-center justify-center mb-2 sm:mb-3`}>
         <span className="text-xl sm:text-2xl">{icon}</span>
       </div>

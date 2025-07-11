@@ -2,6 +2,7 @@ import React from 'react';
 import { Plus, Minus } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
+import { useCartAnimation } from '../contexts/CartAnimationContext';
 import { useProductLanguage } from '../hooks/useProductLanguage';
 
 interface ProductCardProps {
@@ -13,17 +14,30 @@ interface ProductCardProps {
   unit?: string;
   image?: string;
   imageUrl?: string;
+  netQuantity?: string;
+  onProductClick?: (productId: string) => void;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, manglishName, price, unit, image, imageUrl }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, manglishName, price, unit, image, imageUrl, netQuantity, onProductClick }) => {
   const { t } = useLanguage();
   const { cartItems, addToCart, updateQuantity } = useCart();
   const { formatProductName } = useProductLanguage();
+  const { showAnimation } = useCartAnimation();
 
   const cartItem = cartItems.find(item => item.id === id);
   const quantity = cartItem?.quantity || 0;
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const productName = formatProductName({
+      name,
+      malayalamName,
+      manglishName
+    });
+    
+    // Use the clicked button as trigger element
+    const triggerButton = event.currentTarget;
+    showAnimation(productName, triggerButton);
+    
     // Always pass both image and imageUrl for cart compatibility
     addToCart({
       id,
@@ -34,7 +48,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
       unit: unit || '',
       image: image || imageUrl || '',
       imageUrl: imageUrl || image || ''
-    });
+    }, false); // Don't trigger context animation since we're handling it manually
   };
 
   const handleUpdateQuantity = (newQuantity: number) => {
@@ -53,19 +67,30 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow w-full h-full flex flex-col min-h-[270px] max-h-[340px]">
-      <div className="w-full aspect-square bg-gray-50 flex items-center justify-center relative overflow-hidden">
+      <div 
+        className="w-full aspect-square bg-gray-50 flex items-center justify-center relative overflow-hidden cursor-pointer"
+        onClick={() => onProductClick?.(id)}
+      >
         <img src={imgSrc} alt={name} className="w-full h-full object-cover object-center max-h-40 min-h-32" style={{aspectRatio:'1/1'}} />
       </div>
       
       <div className="p-3 sm:p-4 flex flex-col flex-1 min-h-0">
-        <div className="flex-1 mb-3 min-h-[48px]">
+        <div 
+          className="flex-1 mb-3 min-h-[48px] cursor-pointer"
+          onClick={() => onProductClick?.(id)}
+        >
           <h3 className="font-medium text-gray-800 mb-1 text-sm sm:text-base leading-tight break-words line-clamp-2">{displayName}</h3>
+          {netQuantity && (
+            <p className="text-xs sm:text-sm text-gray-500">{netQuantity}</p>
+          )}
         </div>
         
         <div className="flex items-center justify-between gap-2 mt-auto">
           <div className="flex-shrink-0">
             <span className="text-base sm:text-lg font-semibold text-gray-800">₹{price}</span>
-            <span className="text-xs sm:text-sm text-gray-500 ml-1">/{t(unit || 'unit')}</span>
+            {!netQuantity && unit && (
+              <span className="text-xs sm:text-sm text-gray-500 ml-1">/{t(unit)}</span>
+            )}
           </div>
           
           {quantity === 0 ? (

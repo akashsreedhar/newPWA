@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { CartProvider, useCart } from './contexts/CartContext';
+import { CartAnimationProvider, useCartAnimation } from './contexts/CartAnimationContext';
 import BottomNavigation from './components/BottomNavigation';
+import GlobalHeader from './components/GlobalHeader';
+import PersistentCartButton from './components/PersistentCartButton';
+import CartAnimation from './components/CartAnimation';
 import HomePage from './pages/HomePage';
 import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
 import AccountPage from './pages/AccountPage';
+import SearchPage from './pages/SearchPage';
+import CategoryPage from './pages/CategoryPage';
+import GroceryKitchenPage from './pages/GroceryKitchenPage';
+import SnacksDrinksPage from './pages/SnacksDrinksPage';
+import BeautyPersonalCarePage from './pages/BeautyPersonalCarePage';
+import HouseholdEssentialsPage from './pages/HouseholdEssentialsPage';
 import { useAuth } from './hooks/useAuth.ts';
 
 
@@ -59,8 +69,17 @@ const AppInner: React.FC = () => {
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
 
+  // Navigation state for pages
+  const [currentPage, setCurrentPage] = useState<'home' | 'search' | 'category' | 'dedicated-category'>('home');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [navigationStack, setNavigationStack] = useState<string[]>(['home']); // Track navigation history
+
   // Cart count for badge
   const { cartItems } = useCart();
+  
+  // Cart animation hook
+  const { isAnimating, currentProductName, onAnimationComplete } = useCartAnimation();
 
   // Generate fingerprint on mount
   useEffect(() => {
@@ -107,8 +126,99 @@ const AppInner: React.FC = () => {
     }
   }, []);
 
+  // Navigation handlers
+  const handleSearchFocus = () => {
+    setCurrentPage('search');
+  };
+
+  // Future: Handler for programmatic search with query
+  // const handleSearch = (query: string) => {
+  //   setSearchQuery(query);
+  //   setCurrentPage('search');
+  // };
+
+  const handleBackToHome = () => {
+    setCurrentPage('home');
+    setSearchQuery('');
+    setSelectedCategory('');
+    setNavigationStack(['home']);
+    // Scroll to top when returning to home
+    window.scrollTo(0, 0);
+  };
+
+  const handleSmartBack = () => {
+    if (navigationStack.length <= 1) {
+      // Already at home or only one item in stack
+      handleBackToHome();
+      return;
+    }
+
+    // Remove current page from stack
+    const newStack = [...navigationStack];
+    newStack.pop();
+    setNavigationStack(newStack);
+
+    // Get previous page info
+    const previousPage = newStack[newStack.length - 1];
+    
+    if (previousPage === 'home') {
+      setCurrentPage('home');
+      setSelectedCategory('');
+    } else if (previousPage.startsWith('dedicated-category:')) {
+      const category = previousPage.replace('dedicated-category:', '');
+      setCurrentPage('dedicated-category');
+      setSelectedCategory(category);
+    } else if (previousPage.startsWith('category:')) {
+      const category = previousPage.replace('category:', '');
+      setCurrentPage('category');
+      setSelectedCategory(category);
+    }
+
+    // Scroll to top when navigating back
+    window.scrollTo(0, 0);
+  };
+
+  const handleCategorySelect = (category: string) => {
+    setSelectedCategory(category);
+    // Check if this is a main category that has a dedicated page
+    const mainCategories = ['Grocery & Kitchen', 'Snacks & Drinks', 'Beauty & Personal Care', 'Household Essentials'];
+    const newPage = mainCategories.includes(category) ? 'dedicated-category' : 'category';
+    
+    setCurrentPage(newPage);
+    
+    // Update navigation stack
+    setNavigationStack(prev => [...prev, `${newPage}:${category}`]);
+  };
+
+  // Tab change handler with scroll to top
+  const handleTabChange = (newTab: string) => {
+    setTab(newTab);
+    // Scroll to top when changing tabs
+    window.scrollTo(0, 0);
+  };
+
+  // Handler to view cart (from persistent button)
+  const handleViewCart = () => {
+    setTab('cart');
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
+
+  // Order feedback handlers
+  const handleOrderPlaced = (success: boolean, message: string) => {
+    if (success) {
+      setOrderSuccess(message);
+      setOrderError(null);
+      setTimeout(() => setOrderSuccess(null), 5000);
+    } else {
+      setOrderError(message);
+      setOrderSuccess(null);
+      setTimeout(() => setOrderError(null), 5000);
+    }
+  };
+
   // --- Auth ---
-  const { userId, accessError, lastLocation, loading: authLoading } = useAuth(fingerprint);
+  const { userId, accessError, loading: authLoading } = useAuth(fingerprint);
   console.log('App.tsx userId:', userId, 'accessError:', accessError, 'authLoading:', authLoading);
   // --- Cart ---
   // We'll use the context in the page components
@@ -263,18 +373,6 @@ const AppInner: React.FC = () => {
   // Don't disable if user is already authenticated (prevent flickering during operations)
   const disableOrderReview = (authLoading && !userId) || (!isUserRegistered && !isLocalhost && !devMode);
 
-  // --- Order placement feedback ---
-  const handleOrderPlaced = (success: boolean, message: string) => {
-    if (success) {
-      setOrderSuccess(message);
-      // Don't switch tabs immediately - let the modal handle navigation after animations
-      setTimeout(() => setOrderSuccess(null), 3500);
-    } else {
-      setOrderError(message);
-      setTimeout(() => setOrderError(null), 3500);
-    }
-  };
-
   // --- UI rendering ---
   if (tgAccessError) {
     return (
@@ -377,37 +475,134 @@ const AppInner: React.FC = () => {
 
       {/* Main content */}
       <div className="pt-2">
-        {tab === 'home' && (
-          <HomePage />
-        )}
-        {tab === 'cart' && (
-          <CartPage
-            userId={userId}
-            disableOrderReview={disableOrderReview}
-            deliveryAllowed={deliveryAllowed}
-            deliveryCheckPending={deliveryCheckPending}
-            onOrderPlaced={handleOrderPlaced}
-            onNavigateToOrders={() => setTab('orders')}
+        {/* Global Header - only show on main tab pages, not on search/category overlay */}
+        {(tab === 'home' || tab === 'cart' || tab === 'orders' || tab === 'account') && 
+         currentPage === 'home' && (
+          <GlobalHeader 
+            onSearchFocus={handleSearchFocus}
+            showBackButton={false}
+            title={tab === 'home' ? '' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            showSearch={tab !== 'account'}
+            searchPlaceholder="Search products..."
           />
         )}
-        {tab === 'orders' && (
-          <OrdersPage userId={userId} onNavigateToCart={() => setTab('cart')} />
+
+        {/* Page Content based on currentPage */}
+        {currentPage === 'home' && (
+          <>
+            {tab === 'home' && (
+              <HomePage 
+                onCategorySelect={handleCategorySelect}
+              />
+            )}
+            {tab === 'cart' && (
+              <CartPage
+                userId={userId}
+                disableOrderReview={disableOrderReview}
+                deliveryAllowed={deliveryAllowed}
+                deliveryCheckPending={deliveryCheckPending}
+                onOrderPlaced={handleOrderPlaced}
+                onNavigateToOrders={() => setTab('orders')}
+              />
+            )}
+            {tab === 'orders' && (
+              <OrdersPage userId={userId} onNavigateToCart={() => setTab('cart')} />
+            )}
+            {tab === 'account' && (
+              <AccountPage userId={userId} />
+            )}
+          </>
         )}
-        {tab === 'account' && (
-          <AccountPage userId={userId} />
+
+        {/* Search Page Overlay */}
+        {currentPage === 'search' && (
+          <SearchPage 
+            onBack={handleBackToHome}
+            initialQuery={searchQuery}
+          />
+        )}
+
+        {/* Category Page Overlay */}
+        {currentPage === 'category' && (
+          <CategoryPage 
+            category={selectedCategory}
+            onBack={handleSmartBack}
+          />
+        )}
+
+        {/* Dedicated Category Pages */}
+        {currentPage === 'dedicated-category' && selectedCategory === 'Grocery & Kitchen' && (
+          <GroceryKitchenPage 
+            onBack={handleSmartBack}
+            onNavigateToCategory={handleCategorySelect}
+            onSearchOpen={handleSearchFocus}
+          />
+        )}
+        
+        {currentPage === 'dedicated-category' && selectedCategory === 'Snacks & Drinks' && (
+          <SnacksDrinksPage 
+            onBack={handleSmartBack}
+            onNavigateToCategory={handleCategorySelect}
+            onSearchOpen={handleSearchFocus}
+          />
+        )}
+        
+        {currentPage === 'dedicated-category' && selectedCategory === 'Beauty & Personal Care' && (
+          <BeautyPersonalCarePage 
+            onBack={handleSmartBack}
+            onNavigateToCategory={handleCategorySelect}
+            onSearchOpen={handleSearchFocus}
+          />
+        )}
+        
+        {currentPage === 'dedicated-category' && selectedCategory === 'Household Essentials' && (
+          <HouseholdEssentialsPage 
+            onBack={handleSmartBack}
+            onNavigateToCategory={handleCategorySelect}
+            onSearchOpen={handleSearchFocus}
+          />
         )}
       </div>
-      <BottomNavigation activeTab={tab} onTabChange={setTab} cartCount={cartItems.length} />
+      
+      {/* Bottom Navigation - only show when not in overlay mode */}
+      {currentPage === 'home' && (
+        <BottomNavigation activeTab={tab} onTabChange={handleTabChange} cartCount={cartItems.length} />
+      )}
+
+      {/* Persistent Cart Button - show on all pages except cart and account */}
+      {tab !== 'cart' && tab !== 'account' && (
+        <PersistentCartButton onViewCart={handleViewCart} />
+      )}
+
+      {/* Cart Animation */}
+      <CartAnimation 
+        show={isAnimating} 
+        onComplete={onAnimationComplete} 
+        productName={currentProductName}
+      />
     </div>
   );
 };
 
-const App: React.FC = () => (
-  <LanguageProvider>
-    <CartProvider>
+const App: React.FC = () => {
+  return (
+    <LanguageProvider>
+      <CartAnimationProvider>
+        <AppWithAnimation />
+      </CartAnimationProvider>
+    </LanguageProvider>
+  );
+};
+
+// Create a wrapper component to access both contexts
+const AppWithAnimation: React.FC = () => {
+  const { showAnimation } = useCartAnimation();
+  
+  return (
+    <CartProvider onCartItemAdded={showAnimation}>
       <AppInner />
     </CartProvider>
-  </LanguageProvider>
-);
+  );
+};
 
 export default App;

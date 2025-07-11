@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import OrderReviewModal from '../components/OrderReviewModal';
+import PriceChangeModal from '../components/PriceChangeModal';
 import { AlertTriangle } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
 import { Trash2, Plus, Minus } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
+import { validateCartPricesAdvanced } from '../utils/advancedPriceValidation';
+import { PriceValidationAnalytics, PriceValidationErrorTracker } from '../utils/priceValidationAnalytics';
 
 interface CartPageProps {
   userId: string | null;
@@ -30,8 +32,44 @@ const CartPage: React.FC<CartPageProps> = ({
   onNavigateToOrders
 }) => {
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [priceChangeModalOpen, setPriceChangeModalOpen] = useState(false);
+  const [priceValidationResult, setPriceValidationResult] = useState<any>(null);
+  const [validatingPrices, setValidatingPrices] = useState(false);
+  const [validationSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const { t, language, languageDisplay } = useLanguage();
-  const { cartItems, updateQuantity, removeFromCart, getCartTotal, clearCart } = useCart();
+  const { cartItems, updateQuantity, removeFromCart, getCartTotal, clearCart, validatePrices, updateCartPrices } = useCart();
+
+  // Initialize analytics
+  const analytics = useCallback(() => PriceValidationAnalytics.getInstance(), []);
+
+  // Auto-validate prices periodically (every 2 minutes) when cart is not empty
+  useEffect(() => {
+    if (cartItems.length === 0) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const startTime = Date.now();
+        const validation = await validateCartPricesAdvanced(cartItems);
+        const duration = Date.now() - startTime;
+        
+        analytics().trackValidation(duration, validation.hasChanges);
+
+        if (validation.hasChanges && validation.riskLevel !== 'low') {
+          // Silent update for low-risk changes, notification for higher risk
+          console.log('Background price validation detected changes:', validation.priceChanges);
+          // You could show a subtle notification here
+        }
+      } catch (error) {
+        PriceValidationErrorTracker.trackError(error as Error, {
+          validationType: 'client',
+          timestamp: new Date().toISOString(),
+          cartItems: cartItems.map(item => ({ id: item.id, name: item.name }))
+        });
+      }
+    }, 120000); // 2 minutes
+
+    return () => clearInterval(interval);
+  }, [cartItems, analytics]);
 
   const deliveryCharges = getCartTotal() >= 500 ? 0 : 30;
   const grandTotal = getCartTotal() + deliveryCharges;
@@ -65,6 +103,88 @@ const CartPage: React.FC<CartPageProps> = ({
 
   // Accepts { address, message } from OrderReviewModal
   const [placingOrder, setPlacingOrder] = useState(false);
+
+  // Handle proceed to checkout with production-grade price validation
+  const handleProceedToCheckout = async () => {
+    if (!userId || accessError) {
+      return;
+    }
+
+    setValidatingPrices(true);
+    const startTime = Date.now();
+    
+    try {
+      // Use advanced validation for production
+      const validation = await validateCartPricesAdvanced(cartItems);
+      const duration = Date.now() - startTime;
+      
+      // Track validation metrics
+      analytics().trackValidation(duration, validation.hasChanges);
+      
+      if (validation.unavailableItems.length > 0) {
+        // Handle unavailable products
+        alert(`Some items are no longer available: ${validation.unavailableItems.map(item => item.name).join(', ')}`);
+        return;
+      }
+
+      if (validation.stockWarnings.length > 0) {
+        // Handle stock issues
+        const stockMessages = validation.stockWarnings.map(warning => 
+          `${warning.itemName}: Only ${warning.availableStock} left (you wanted ${warning.requestedQuantity})`
+        ).join('\n');
+        
+        if (!confirm(`Stock limitations detected:\n${stockMessages}\n\nContinue with available quantities?`)) {
+          return;
+        }
+      }
+
+      if (validation.hasChanges) {
+        // Show enhanced price change modal with risk level
+        setPriceValidationResult(validation);
+        setPriceChangeModalOpen(true);
+      } else {
+        // No changes, proceed directly to order review
+        setReviewOpen(true);
+      }
+    } catch (error) {
+      console.error('Error validating prices:', error);
+      
+      // Track error for production monitoring
+      PriceValidationErrorTracker.trackError(error as Error, {
+        userId,
+        cartItems: cartItems.map(item => ({ id: item.id, name: item.name })),
+        validationType: 'client',
+        timestamp: new Date().toISOString()
+      });
+      
+      // Graceful fallback
+      if (confirm('Unable to verify current prices. This may result in price differences. Continue anyway?')) {
+        setReviewOpen(true);
+      }
+    } finally {
+      setValidatingPrices(false);
+    }
+  };
+
+  // Handle accepting price changes
+  const handleAcceptPriceChanges = () => {
+    if (priceValidationResult?.updatedItems) {
+      updateCartPrices(priceValidationResult.updatedItems);
+    }
+    setPriceChangeModalOpen(false);
+    setReviewOpen(true);
+  };
+
+  // Handle rejecting price changes (cancel order)
+  const handleRejectPriceChanges = () => {
+    setPriceChangeModalOpen(false);
+    
+    // Track order cancellation for analytics
+    analytics().trackOrderCancellation('price_change');
+    
+    // User stays on cart page
+  };
+
   // Only allow one order placement per user action
   const handlePlaceOrder = async ({ address, message }: { address: any; message: string }) => {
     if (placingOrder) return;
@@ -166,6 +286,16 @@ const CartPage: React.FC<CartPageProps> = ({
 
   return (
     <div className="bg-gray-50 min-h-screen pb-32 sm:pb-36">
+      {/* Price Change Modal */}
+      <PriceChangeModal
+        isOpen={priceChangeModalOpen}
+        onClose={handleRejectPriceChanges}
+        onAccept={handleAcceptPriceChanges}
+        priceChanges={priceValidationResult?.priceChanges || []}
+        cartTotal={getCartTotal()}
+        newCartTotal={priceValidationResult?.updatedItems?.reduce((total: number, item: any) => total + (item.price * item.quantity), 0) || getCartTotal()}
+      />
+
       {/* Order Review Modal */}
       <OrderReviewModal
         open={reviewOpen}
@@ -181,9 +311,6 @@ const CartPage: React.FC<CartPageProps> = ({
         deliveryCheckPending={deliveryCheckPending}
         loading={!!authLoading || placingOrder}
       />
-      <div className="bg-white border-b border-gray-200 p-3 sm:p-4">
-        <h1 className="text-lg sm:text-xl font-semibold text-gray-800">{t('cart')}</h1>
-      </div>
 
       {/* Registration enforcement warning */}
       {(!userId || accessError) && (
@@ -280,11 +407,13 @@ const CartPage: React.FC<CartPageProps> = ({
 
       <div className="fixed bottom-16 sm:bottom-20 left-0 right-0 bg-white border-t border-gray-200 p-3 sm:p-4 safe-area-inset-bottom">
         <button
-          onClick={() => setReviewOpen(true)}
-          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
-          disabled={!userId || !!accessError || authLoading}
+          onClick={handleProceedToCheckout}
+          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+          disabled={!userId || !!accessError || authLoading || validatingPrices}
         >
-          {(!userId || accessError)
+          {validatingPrices
+            ? 'Validating Prices...'
+            : (!userId || accessError)
             ? 'Registration Required'
             : t('proceedToCheckout') + ` • ₹${grandTotal}`}
         </button>

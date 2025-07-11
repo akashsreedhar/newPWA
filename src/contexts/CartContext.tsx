@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { validateCartPrices, PriceValidationResult } from '../utils/priceValidation';
 
 export interface CartItem {
   id: string;
@@ -23,7 +24,7 @@ export interface Order {
 interface CartContextType {
   cartItems: CartItem[];
   orders: Order[];
-  addToCart: (item: Omit<CartItem, 'quantity'>) => void;
+  addToCart: (item: Omit<CartItem, 'quantity'>, showAnimation?: boolean) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
@@ -31,11 +32,14 @@ interface CartContextType {
   getCartTotal: () => number;
   getItemCount: () => number;
   reorderItems: (items: CartItem[]) => void;
+  validatePrices: () => Promise<PriceValidationResult>;
+  updateCartPrices: (updatedItems: CartItem[]) => void;
+  onCartItemAdded?: (productName: string) => void; // Callback for animations
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (productName: string) => void }> = ({ children, onCartItemAdded }) => {
   // Load cart from localStorage if available
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
@@ -67,13 +71,20 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem("cart", JSON.stringify(cartItems));
   }, [cartItems]);
 
-  const addToCart = (item: Omit<CartItem, 'quantity'>) => {
+  const addToCart = (item: Omit<CartItem, 'quantity'>, showAnimation: boolean = true) => {
     setCartItems(prev => {
       const existingItem = prev.find(cartItem => cartItem.id === item.id);
       // Always ensure both image and imageUrl are set for cart compatibility
       const imageUrl = (item as any).imageUrl || (item as any).image || '';
       const image = (item as any).image || (item as any).imageUrl || '';
       const itemWithImages = { ...item, image, imageUrl };
+      
+      // Trigger animation callback if provided and it's a new item or showAnimation is true
+      if (showAnimation && onCartItemAdded) {
+        const productName = item.name || item.malayalamName || item.manglishName || 'Product';
+        onCartItemAdded(productName);
+      }
+      
       if (existingItem) {
         return prev.map(cartItem =>
           cartItem.id === item.id
@@ -137,6 +148,15 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const validatePrices = async (): Promise<PriceValidationResult> => {
+    return await validateCartPrices(cartItems);
+  };
+
+  const updateCartPrices = (updatedItems: CartItem[]) => {
+    setCartItems(updatedItems);
+    localStorage.setItem("cart", JSON.stringify(updatedItems));
+  };
+
   return (
     <CartContext.Provider value={{
       cartItems,
@@ -148,7 +168,10 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       placeOrder,
       getCartTotal,
       getItemCount,
-      reorderItems
+      reorderItems,
+      validatePrices,
+      updateCartPrices,
+      onCartItemAdded
     }}>
       {children}
     </CartContext.Provider>
