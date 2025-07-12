@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { validateCartPrices, PriceValidationResult } from '../utils/priceValidation';
 
 export interface CartItem {
@@ -38,6 +38,7 @@ interface CartContextType {
   reorderItems: (items: CartItem[]) => void;
   validatePrices: () => Promise<PriceValidationResult>;
   updateCartPrices: (updatedItems: CartItem[]) => void;
+  validatePricesManually: () => Promise<PriceValidationResult>; // For manual cart page validation
   onCartItemAdded?: (productName: string) => void; // Callback for animations
 }
 
@@ -49,31 +50,50 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
     try {
       const stored = localStorage.getItem("cart");
       return stored ? JSON.parse(stored) : [];
-    } catch {
+    } catch (error) {
+      console.error('Error loading cart from localStorage:', error);
       return [];
     }
   });
-  const [orders, setOrders] = useState<Order[]>([
-    {
-      id: 'ORD001',
-      items: [],
-      total: 245,
-      status: 'delivered',
-      date: '2024-01-15'
-    },
-    {
-      id: 'ORD002',
-      items: [],
-      total: 180,
-      status: 'processing',
-      date: '2024-01-16'
+
+  const [orders, setOrders] = useState<Order[]>(() => {
+    try {
+      const stored = localStorage.getItem("orders");
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error loading orders from localStorage:', error);
+      return [];
     }
-  ]);
+  });
+
+  // Add price validation state
+  const [lastPriceCheck, setLastPriceCheck] = useState<number>(0);
+  const [priceValidationInProgress, setPriceValidationInProgress] = useState(false);
+
+  // Auto-validate prices every 30 seconds if cart has items
+  useEffect(() => {
+    if (cartItems.length === 0) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await validatePrices();
+      } catch (error) {
+        console.error('Auto price validation failed:', error);
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [cartItems.length]);
 
   // Save cart to localStorage whenever it changes
-  React.useEffect(() => {
+  useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cartItems));
   }, [cartItems]);
+
+  // Save orders to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("orders", JSON.stringify(orders));
+  }, [orders]);
 
   const addToCart = (item: Omit<CartItem, 'quantity'>, showAnimation: boolean = true) => {
     setCartItems(prev => {
@@ -144,16 +164,17 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
 
   const getCartTotal = () => {
     return cartItems.reduce((total, item) => {
-      // Use sellingPrice as the primary price
-      const itemPrice = item.sellingPrice || 0;
+      // Use price as the primary field for consistency with validation
+      const itemPrice = item.price || item.sellingPrice || 0;
       return total + (itemPrice * item.quantity);
     }, 0);
   };
 
   const getTotalSavings = () => {
     return cartItems.reduce((savings, item) => {
-      if (item.mrp && item.sellingPrice) {
-        return savings + ((item.mrp - item.sellingPrice) * item.quantity);
+      const currentPrice = item.price || item.sellingPrice || 0;
+      if (item.mrp && currentPrice) {
+        return savings + ((item.mrp - currentPrice) * item.quantity);
       }
       return savings;
     }, 0);
@@ -165,8 +186,9 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       if (item.mrp) {
         return total + (item.mrp * item.quantity);
       }
-      // Fallback to sellingPrice if MRP not available
-      return total + (item.sellingPrice * item.quantity);
+      // Fallback to current price if MRP not available
+      const currentPrice = item.price || item.sellingPrice || 0;
+      return total + (currentPrice * item.quantity);
     }, 0);
   };
 
@@ -187,12 +209,66 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
   };
 
   const validatePrices = async (): Promise<PriceValidationResult> => {
-    return await validateCartPrices(cartItems);
+    if (priceValidationInProgress) {
+      console.log('Price validation already in progress, skipping...');
+      return { isValid: true, hasChanges: false, updatedItems: cartItems, priceChanges: [] };
+    }
+
+    try {
+      setPriceValidationInProgress(true);
+      const result = await validateCartPrices(cartItems);
+      setLastPriceCheck(Date.now());
+      
+      console.log('🔍 Cart validation result:', result);
+      
+      // If prices have changed, do NOT automatically update the cart
+      // Let the user decide via the price change modal
+      if (result.hasChanges && result.priceChanges.length > 0) {
+        console.log('⚠️ Price changes detected - user intervention required');
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Price validation failed:', error);
+      return { isValid: false, hasChanges: false, updatedItems: cartItems, priceChanges: [] };
+    } finally {
+      setPriceValidationInProgress(false);
+    }
+  };
+
+  const validatePricesManually = async (): Promise<PriceValidationResult> => {
+    // Force validation regardless of timing - for manual cart page checks
+    try {
+      const result = await validateCartPrices(cartItems);
+      setLastPriceCheck(Date.now());
+      
+      console.log('Manual price validation result:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('Manual price validation failed:', error);
+      return { isValid: false, hasChanges: false, updatedItems: cartItems, priceChanges: [] };
+    }
   };
 
   const updateCartPrices = (updatedItems: CartItem[]) => {
+    console.log('📝 Updating cart prices:', {
+      oldCount: cartItems.length,
+      newCount: updatedItems.length,
+      oldItems: cartItems.map(item => ({ id: item.id, name: item.name, price: item.price })),
+      newItems: updatedItems.map(item => ({ id: item.id, name: item.name, price: item.price }))
+    });
+    
+    // Update both state and localStorage immediately
     setCartItems(updatedItems);
     localStorage.setItem("cart", JSON.stringify(updatedItems));
+    
+    console.log('✅ Cart prices updated successfully');
+    
+    // Trigger immediate custom event for synchronization
+    window.dispatchEvent(new CustomEvent('cartUpdated', { 
+      detail: { updatedItems, timestamp: Date.now() } 
+    }));
   };
 
   return (
@@ -211,6 +287,7 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       reorderItems,
       validatePrices,
       updateCartPrices,
+      validatePricesManually,
       onCartItemAdded
     }}>
       {children}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Confetti from 'react-confetti';
 import { useAddresses } from '../hooks/useAddresses';
 import AddressModal, { Address } from './AddressModal';
+import { useCart } from '../contexts/CartContext';
 
 interface OrderReviewModalProps {
   open: boolean;
@@ -20,7 +21,7 @@ interface OrderReviewModalProps {
 const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   open,
   onClose,
-  cartItems,
+  cartItems: propCartItems, // Rename to avoid confusion
   onPlaceOrder,
   onClearCart,
   onNavigateToOrders,
@@ -30,6 +31,24 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   deliveryCheckPending = false,
   loading = false,
 }) => {
+  // Get the latest cart items directly from context as a backup
+  const { cartItems: contextCartItems } = useCart();
+  
+  // Use context cart items if prop cart items seem stale
+  const cartItems = propCartItems && propCartItems.length > 0 ? propCartItems : contextCartItems;
+  
+  // Log cart items for debugging
+  useEffect(() => {
+    if (open) {
+      console.log('📦 OrderReviewModal opened with cart items:', {
+        propItems: propCartItems?.length || 0,
+        contextItems: contextCartItems?.length || 0,
+        usingItems: cartItems?.length || 0,
+        items: cartItems?.map(item => ({ id: item.id, name: item.name, price: item.price }))
+      });
+    }
+  }, [open, propCartItems, contextCartItems, cartItems]);
+
   // Animation/order state machine: 'idle' | 'progress' | 'confetti' | 'checkmark'
   const [step, setStep] = useState<'idle' | 'progress' | 'confetti' | 'checkmark'>('idle');
   // For progress bar

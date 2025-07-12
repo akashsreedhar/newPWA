@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import OrderReviewModal from '../components/OrderReviewModal';
@@ -37,10 +37,148 @@ const CartPage: React.FC<CartPageProps> = ({
   const [validatingPrices, setValidatingPrices] = useState(false);
   const [validationSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const { t, language, languageDisplay } = useLanguage();
-  const { cartItems, updateQuantity, removeFromCart, getCartTotal, getTotalMRP, getTotalSavings, clearCart, validatePrices, updateCartPrices } = useCart();
+  const { cartItems, updateQuantity, removeFromCart, getCartTotal, getTotalMRP, getTotalSavings, clearCart, validatePrices, updateCartPrices, validatePricesManually } = useCart();
+
+  // Use ref to track latest cart items for validation
+  const latestCartItemsRef = useRef(cartItems);
+  
+  // Update ref whenever cartItems change
+  useEffect(() => {
+    latestCartItemsRef.current = cartItems;
+    console.log('📦 Cart items updated in CartPage:', cartItems.length, 'items');
+  }, [cartItems]);
+
+  // Listen for cart updates from context
+  useEffect(() => {
+    const handleCartUpdate = (event: CustomEvent) => {
+      console.log('📦 Cart updated via custom event:', event.detail);
+      // Force update the ref with latest data
+      latestCartItemsRef.current = event.detail.updatedItems;
+    };
+
+    window.addEventListener('cartUpdated', handleCartUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('cartUpdated', handleCartUpdate as EventListener);
+    };
+  }, []);
+
+  // Separate trigger for validation after state changes
+  const [forceValidationTrigger, setForceValidationTrigger] = useState(0);
+  
+  // Force validation function
+  const triggerValidation = useCallback(() => {
+    console.log('🔄 Manually triggering validation');
+    setForceValidationTrigger(prev => prev + 1);
+  }, []);
+
+  // Validation effect that responds to manual triggers
+  useEffect(() => {
+    if (forceValidationTrigger === 0) return; // Skip initial render
+    
+    const currentCartItems = latestCartItemsRef.current;
+    if (currentCartItems.length === 0) return;
+    
+    console.log('🔍 Force validation triggered:', forceValidationTrigger);
+    
+    const validate = async () => {
+      try {
+        setValidatingPrices(true);
+        const result = await validateCartPricesAdvanced(currentCartItems, true);
+        
+        if (result.hasChanges && result.priceChanges.length > 0) {
+          console.log('💰 Force validation found price changes:', result.priceChanges);
+          
+          const convertedResult = {
+            isValid: result.isValid,
+            hasChanges: result.hasChanges,
+            updatedItems: result.updatedItems,
+            priceChanges: result.priceChanges.map(change => ({
+              itemId: change.itemId,
+              itemName: change.itemName,
+              oldPrice: change.oldPrice,
+              newPrice: change.newPrice
+            })),
+            riskLevel: result.riskLevel,
+            unavailableItems: result.unavailableItems,
+            stockWarnings: result.stockWarnings
+          };
+          
+          setPriceValidationResult(convertedResult);
+          setPriceChangeModalOpen(true);
+        } else {
+          console.log('✅ Force validation: All prices current');
+          setPriceValidationResult(null);
+        }
+      } catch (error) {
+        console.error('Force validation failed:', error);
+      } finally {
+        setValidatingPrices(false);
+      }
+    };
+    
+    validate();
+  }, [forceValidationTrigger]);
 
   // Initialize analytics
   const analytics = useCallback(() => PriceValidationAnalytics.getInstance(), []);
+
+  // Validate prices on page load and when coming back from modals
+  useEffect(() => {
+    const currentCartItems = latestCartItemsRef.current;
+    if (currentCartItems.length === 0) return;
+    
+    // Skip validation if already validating to prevent double validation
+    if (validatingPrices) return;
+
+    // Create a unique key for this validation to prevent duplicate triggers
+    const validationKey = `${currentCartItems.length}_${priceChangeModalOpen}_${reviewOpen}`;
+    
+    const validateOnLoad = async () => {
+      try {
+        setValidatingPrices(true);
+        console.log('🔍 Validating prices - key:', validationKey);
+        
+        const result = await validateCartPricesAdvanced(currentCartItems, true); // Force fresh
+        
+        if (result.hasChanges && result.priceChanges.length > 0) {
+          console.log('💰 Price changes detected:', result.priceChanges);
+          
+          // Convert advanced result to ensure compatibility
+          const convertedResult = {
+            isValid: result.isValid,
+            hasChanges: result.hasChanges,
+            updatedItems: result.updatedItems,
+            priceChanges: result.priceChanges.map(change => ({
+              itemId: change.itemId,
+              itemName: change.itemName,
+              oldPrice: change.oldPrice,
+              newPrice: change.newPrice
+            })),
+            riskLevel: result.riskLevel,
+            unavailableItems: result.unavailableItems,
+            stockWarnings: result.stockWarnings
+          };
+          
+          setPriceValidationResult(convertedResult);
+          
+          // Only show modal if not already open
+          if (!priceChangeModalOpen && !reviewOpen) {
+            setPriceChangeModalOpen(true);
+          }
+        } else {
+          console.log('✅ All cart prices are current');
+          setPriceValidationResult(null);
+        }
+      } catch (error) {
+        console.error('Price validation failed:', error);
+      } finally {
+        setValidatingPrices(false);
+      }
+    };
+
+    validateOnLoad();
+  }, [priceChangeModalOpen, reviewOpen]); // Removed cartItems to prevent infinite loop
 
   // Auto-validate prices periodically (every 2 minutes) when cart is not empty
   useEffect(() => {
@@ -110,13 +248,31 @@ const CartPage: React.FC<CartPageProps> = ({
       return;
     }
 
+    // Always clear previous validation results to force fresh validation
+    setPriceValidationResult(null);
     setValidatingPrices(true);
     const startTime = Date.now();
     
+    console.log('🔍 Starting fresh price validation for checkout...');
+    
     try {
-      // Use advanced validation for production
-      const validation = await validateCartPricesAdvanced(cartItems);
+      // Get the absolute latest cart items
+      const currentCartItems = latestCartItemsRef.current;
+      console.log('🔍 Checkout validation with latest cart items:', currentCartItems.length);
+      
+      if (currentCartItems.length === 0) {
+        console.log('❌ No items in cart to validate');
+        return;
+      }
+      
+      const validation = await validateCartPricesAdvanced(currentCartItems, true); // Force fresh data
       const duration = Date.now() - startTime;
+      
+      console.log('💰 Price validation result:', {
+        hasChanges: validation.hasChanges,
+        priceChanges: validation.priceChanges,
+        riskLevel: validation.riskLevel
+      });
       
       // Track validation metrics
       analytics().trackValidation(duration, validation.hasChanges);
@@ -169,20 +325,55 @@ const CartPage: React.FC<CartPageProps> = ({
   // Handle accepting price changes
   const handleAcceptPriceChanges = () => {
     if (priceValidationResult?.updatedItems) {
+      console.log('🔄 Accepting price changes:', priceValidationResult.priceChanges);
+      
+      // Update cart prices using the validated items
       updateCartPrices(priceValidationResult.updatedItems);
+      
+      // Clear validation state immediately
+      setPriceValidationResult(null);
+      setPriceChangeModalOpen(false);
+      
+      // Wait for cart state to propagate before opening order review
+      setTimeout(() => {
+        console.log('✅ Opening order review with updated prices');
+        setReviewOpen(true);
+      }, 500); // Increased delay to ensure full state propagation
+    } else {
+      console.log('⚠️ No updated items found in validation result');
+      setPriceValidationResult(null);
+      setPriceChangeModalOpen(false);
     }
-    setPriceChangeModalOpen(false);
-    setReviewOpen(true);
   };
 
   // Handle rejecting price changes (cancel order)
   const handleRejectPriceChanges = () => {
+    console.log('❌ User rejected price changes - removing affected items from cart');
+    
+    // Get the items that had price changes
+    const itemsToRemove = priceValidationResult?.priceChanges?.map((change: any) => change.itemId) || [];
+    
+    if (itemsToRemove.length > 0) {
+      console.log('🗑️ Removing items with price changes:', itemsToRemove);
+      
+      // Remove each item with price changes from the cart
+      itemsToRemove.forEach((itemId: string) => {
+        removeFromCart(itemId);
+      });
+      
+      // Show a message to user about what happened
+      const removedItemsNames = priceValidationResult?.priceChanges?.map((change: any) => change.itemName).join(', ') || '';
+      console.log(`✅ Removed items from cart: ${removedItemsNames}`);
+    }
+    
+    // Clear validation state
+    setPriceValidationResult(null);
     setPriceChangeModalOpen(false);
     
     // Track order cancellation for analytics
     analytics().trackOrderCancellation('price_change');
     
-    // User stays on cart page
+    // No need to trigger validation again since we removed the problematic items
   };
 
   // Only allow one order placement per user action
@@ -269,7 +460,17 @@ const CartPage: React.FC<CartPageProps> = ({
 
   // Clear cart when modal closes after successful order
   const handleModalClose = () => {
+    console.log('📱 OrderReview modal closed - returning to cart');
     setReviewOpen(false);
+    
+    // Clear validation state to force fresh validation
+    setPriceValidationResult(null);
+    
+    // Force immediate re-validation when returning from order review
+    setTimeout(() => {
+      console.log('🔄 Force re-validation after order review close');
+      triggerValidation();
+    }, 100);
   };
 
   if (cartItems.length === 0) {
@@ -300,7 +501,7 @@ const CartPage: React.FC<CartPageProps> = ({
       <OrderReviewModal
         open={reviewOpen}
         onClose={handleModalClose}
-        cartItems={cartItems}
+        cartItems={latestCartItemsRef.current} // Use ref to ensure latest cart items
         // Only trigger Firestore order placement ONCE, after animation completes
         onPlaceOrder={handlePlaceOrder}
         onClearCart={clearCart}

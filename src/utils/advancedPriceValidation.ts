@@ -3,7 +3,7 @@ import { db } from '../firebase';
 
 // Price cache to reduce Firebase calls
 const priceCache = new Map<string, { price: number; timestamp: number; ttl: number }>();
-const CACHE_TTL = 30000; // 30 seconds cache
+const CACHE_TTL = 15000; // Reduced to 15 seconds for more accurate price validation
 
 export interface EnhancedPriceValidationResult {
   isValid: boolean;
@@ -29,8 +29,9 @@ export interface EnhancedPriceValidationResult {
 
 /**
  * Production-grade price validation with caching, batching, and risk assessment
+ * Set forceFresh=true to bypass cache for critical operations like checkout
  */
-export const validateCartPricesAdvanced = async (cartItems: any[]): Promise<EnhancedPriceValidationResult> => {
+export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: boolean = false): Promise<EnhancedPriceValidationResult> => {
   const validationTimestamp = new Date().toISOString();
   const updatedItems = [];
   const priceChanges = [];
@@ -39,20 +40,28 @@ export const validateCartPricesAdvanced = async (cartItems: any[]): Promise<Enha
   let hasChanges = false;
   let totalPriceImpact = 0;
 
+  console.log(`🔍 Starting advanced validation (forceFresh: ${forceFresh})`);
+
   try {
     // Batch fetch for better performance
     const productIds = cartItems.map(item => item.id);
     const cachedItems = new Map();
     const itemsToFetch = [];
 
-    // Check cache first
-    for (const item of cartItems) {
-      const cached = priceCache.get(item.id);
-      if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
-        cachedItems.set(item.id, cached);
-      } else {
-        itemsToFetch.push(item.id);
+    // Check cache first (unless forcing fresh data)
+    if (!forceFresh) {
+      for (const item of cartItems) {
+        const cached = priceCache.get(item.id);
+        if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
+          cachedItems.set(item.id, cached);
+        } else {
+          itemsToFetch.push(item.id);
+        }
       }
+    } else {
+      // Force fresh - fetch all items
+      itemsToFetch.push(...productIds);
+      console.log('🔄 Bypassing cache for fresh price validation');
     }
 
     // Batch fetch uncached items
@@ -73,7 +82,7 @@ export const validateCartPricesAdvanced = async (cartItems: any[]): Promise<Enha
           batchData.set(doc.id, data);
           // Update cache
           priceCache.set(doc.id, {
-            price: data.price,
+            price: data.sellingPrice,
             timestamp: Date.now(),
             ttl: CACHE_TTL
           });
@@ -95,7 +104,7 @@ export const validateCartPricesAdvanced = async (cartItems: any[]): Promise<Enha
       
       // Get data from cache or fresh fetch
       if (cachedItems.has(cartItem.id)) {
-        currentData = { price: cachedItems.get(cartItem.id).price };
+        currentData = { sellingPrice: cachedItems.get(cartItem.id).price };
       } else {
         currentData = freshData.get(cartItem.id);
       }
@@ -107,7 +116,7 @@ export const validateCartPricesAdvanced = async (cartItems: any[]): Promise<Enha
         continue;
       }
 
-      const currentPrice = currentData.price;
+      const currentPrice = currentData.sellingPrice || currentData.price; // fallback to legacy field
       const oldPrice = cartItem.price;
 
       // Check for price changes
@@ -140,6 +149,7 @@ export const validateCartPricesAdvanced = async (cartItems: any[]): Promise<Enha
       updatedItems.push({
         ...cartItem,
         price: currentPrice,
+        sellingPrice: currentPrice, // CRITICAL: Keep both fields in sync
         name: currentData.name_en || currentData.name || cartItem.name,
         malayalamName: currentData.name_ml || cartItem.malayalamName,
         manglishName: currentData.name_manglish || cartItem.manglishName,

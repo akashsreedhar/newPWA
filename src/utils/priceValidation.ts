@@ -42,7 +42,7 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
         }
 
         const currentData = productDoc.data();
-        const currentPrice = currentData.price;
+        const currentPrice = currentData.sellingPrice;
 
         // Check if price has changed
         if (currentPrice !== cartItem.price) {
@@ -58,6 +58,7 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
         return {
           ...cartItem,
           price: currentPrice, // Update to current price
+          sellingPrice: currentPrice, // CRITICAL: Also update sellingPrice for consistency
           currentPrice,
           exists: true,
           // Also update other fields that might have changed
