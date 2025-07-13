@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle, RefreshCw } from 'lucide-react';
+import { OrderStatusTracker } from '../components/OrderStatusTracker';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { useAddresses } from '../hooks/useAddresses';
@@ -27,6 +28,7 @@ interface OrderData {
     toDate: () => Date;
   };
   status: string;
+  statusHistory?: { status: string; timestamp: { seconds: number; nanoseconds?: number } }[];
   items: OrderItem[];
   total: number;
   address?: {
@@ -285,6 +287,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
                   <span className="hidden sm:inline">{order.status}</span>
                 </div>
               </div>
+
+              {/* Order Status Tracker */}
+              <OrderStatusTracker status={order.status} statusHistory={order.statusHistory} />
 
               {/* Order Items */}
               <div className="mb-3">

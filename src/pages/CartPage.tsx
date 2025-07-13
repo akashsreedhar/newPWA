@@ -208,7 +208,6 @@ const CartPage: React.FC<CartPageProps> = ({
 
     return () => clearInterval(interval);
   }, [cartItems, analytics]);
-
   const deliveryCharges = getCartTotal() >= 500 ? 0 : 30;
   const grandTotal = getCartTotal() + deliveryCharges;
 
