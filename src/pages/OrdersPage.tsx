@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { useAddresses } from '../hooks/useAddresses';
 import { db } from '../firebase.ts';
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
 
 interface OrdersPageProps {
   userId?: string | null;
@@ -47,58 +47,58 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   const [orders, setOrders] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [reorderingOrderId, setReorderingOrderId] = useState<string | null>(null);
+  // State for expanded delivered orders
+  const [expanded, setExpanded] = useState<{ [orderId: string]: boolean }>({});
 
   useEffect(() => {
     console.log('🆔 OrdersPage received userId:', userId, typeof userId);
-    
     if (!userId) {
       console.log('⚠️ No userId provided, showing empty state');
       setLoading(false);
       return;
     }
-    
     setLoading(true);
     setError(null);
-    
-    // Query Firestore for orders belonging to this user
-    const fetchOrders = async () => {
-      try {
-        console.log('🔍 Fetching orders for userId:', userId);
-        
-        const q = query(
-          collection(db, "orders"),
-          where("user", "==", userId),
-          orderBy("createdAt", "desc")
-        );
-        
-        const snapshot = await getDocs(q);
-        console.log('📦 Found', snapshot.docs.length, 'orders');
-        
-        const fetchedOrders = snapshot.docs.map(doc => {
-          const data = doc.data();
-          console.log('📄 Order data:', { id: doc.id, ...data });
-          return {
-            id: doc.id,
-            ...data
-          };
-        }) as OrderData[];
-        
-        setOrders(fetchedOrders);
-      } catch (err) {
-        console.error('❌ Error fetching orders:', err);
-        setError('Failed to load orders. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrders();
+    // Real-time listener for user's orders
+    const q = query(
+      collection(db, "orders"),
+      where("user", "==", userId),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const fetchedOrders = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Optionally: console.log('📄 Order data:', { id: doc.id, ...data });
+        return {
+          id: doc.id,
+          ...data
+        };
+      }) as OrderData[];
+      // Debug: log statusHistory for each order
+      fetchedOrders.forEach(order => {
+        console.log(`Order ${order.id} statusHistory:`, order.statusHistory);
+      });
+      setOrders(fetchedOrders);
+      setLoading(false);
+    }, (err) => {
+      console.error('❌ Error fetching orders:', err);
+      setError('Failed to load orders. Please try again.');
+      setLoading(false);
+    });
+    return () => unsub();
   }, [userId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'processing':
+      case 'pending':
+        return <Clock className="text-orange-500" size={16} />;
+      case 'accepted':
+        return <CheckCircle className="text-blue-500" size={16} />;
+      case 'ready':
+        return <CheckCircle className="text-purple-500" size={16} />;
+      case 'out_for_delivery':
         return <Clock className="text-orange-500" size={16} />;
       case 'delivered':
         return <CheckCircle className="text-green-500" size={16} />;
@@ -107,9 +107,32 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'Placed';
+      case 'accepted':
+        return 'Confirmed';
+      case 'ready':
+        return 'Ready';
+      case 'out_for_delivery':
+        return 'Out for Delivery';
+      case 'delivered':
+        return 'Delivered';
+      default:
+        return status;
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'processing':
+      case 'pending':
+        return 'bg-orange-100 text-orange-800';
+      case 'accepted':
+        return 'bg-blue-100 text-blue-800';
+      case 'ready':
+        return 'bg-purple-100 text-purple-800';
+      case 'out_for_delivery':
         return 'bg-orange-100 text-orange-800';
       case 'delivered':
         return 'bg-green-100 text-green-800';
@@ -147,9 +170,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
             collection(db, "products"),
             where("name", "==", orderItem.name)
           );
-          
           const productSnapshot = await getDocs(productQuery);
-          
           if (!productSnapshot.empty) {
             // Product found - use complete details
             const productData = productSnapshot.docs[0].data();
@@ -162,7 +183,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
               manglishName: productData.manglishName || '',
               unit: productData.unit || 'piece',
               image: productData.image || '',
-              imageUrl: productData.imageUrl || productData.image || ''
+              imageUrl: productData.imageUrl || productData.image || '',
+              mrp: productData.mrp || orderItem.price,
+              sellingPrice: productData.sellingPrice || orderItem.price
             });
           } else {
             // Product not found - use order data with defaults
@@ -176,7 +199,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
               manglishName: '',
               unit: 'piece',
               image: '',
-              imageUrl: ''
+              imageUrl: '',
+              mrp: orderItem.price,
+              sellingPrice: orderItem.price
             });
           }
         } catch (productError) {
@@ -191,7 +216,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
             manglishName: '',
             unit: 'piece',
             image: '',
-            imageUrl: ''
+            imageUrl: '',
+            mrp: orderItem.price,
+            sellingPrice: orderItem.price
           });
         }
       }
@@ -273,86 +300,169 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
             <p className="text-gray-600">When you place your first order, it will appear here.</p>
           </div>
         ) : (
-          orders.map(order => (
-            <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
-              <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2">
-                <div>
-                  <h3 className="font-semibold text-gray-800 text-sm sm:text-base">
-                    Order #{order.orderNumber || order.id.slice(-6)}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-600">{formatDate(order)}</p>
-                </div>
-                <div className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 sm:gap-2 ${getStatusColor(order.status)} flex-shrink-0`}>
-                  {getStatusIcon(order.status)}
-                  <span className="hidden sm:inline">{order.status}</span>
-                </div>
-              </div>
-
-              {/* Order Status Tracker */}
-              <OrderStatusTracker status={order.status} statusHistory={order.statusHistory} />
-
-              {/* Order Items */}
-              <div className="mb-3">
-                <p className="text-xs text-gray-500 mb-2">{order.items.length} item(s)</p>
-                <div className="space-y-1">
-                  {order.items.slice(0, 3).map((item, idx) => (
-                    <div key={idx} className="text-xs text-gray-600 flex justify-between">
-                      <span>{item.quantity}x {item.name}</span>
-                      <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+          <>
+            {orders.map(order => {
+              const isActive = order.status !== "delivered";
+              console.log(`Order ${order.id}: status="${order.status}", isActive=${isActive}`);
+              if (isActive) {
+                // Active order: show full card
+                return (
+                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
+                    {/* ...existing code for active order card... */}
+                    <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2">
+                      <div>
+                        <h3 className="font-semibold text-gray-800 text-sm sm:text-base">
+                          Order #{order.orderNumber || order.id.slice(-6)}
+                        </h3>
+                        <p className="text-xs sm:text-sm text-gray-600">{formatDate(order)}</p>
+                      </div>
+                      <div className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 sm:gap-2 ${getStatusColor(order.status)} flex-shrink-0`}>
+                        {getStatusIcon(order.status)}
+                        <span className="hidden sm:inline">{getStatusLabel(order.status)}</span>
+                      </div>
                     </div>
-                  ))}
-                  {order.items.length > 3 && (
-                    <div className="text-xs text-gray-500">
-                      +{order.items.length - 3} more items
+                    <OrderStatusTracker status={order.status} statusHistory={order.statusHistory} />
+                    <div className="mb-3">
+                      <p className="text-xs text-gray-500 mb-2">{order.items.length} item(s)</p>
+                      <div className="space-y-1">
+                        {order.items.slice(0, 3).map((item, idx) => (
+                          <div key={idx} className="text-xs text-gray-600 flex justify-between">
+                            <span>{item.quantity}x {item.name}</span>
+                            <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        {order.items.length > 3 && (
+                          <div className="text-xs text-gray-500">
+                            +{order.items.length - 3} more items
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Address */}
-              {order.address && (
-                <div className="mb-3">
-                  <p className="text-xs text-gray-500 mb-1">Delivery Address:</p>
-                  <p className="text-xs text-gray-600">{order.address.label} - {order.address.details}</p>
-                </div>
-              )}
-
-              {/* Message */}
-              {order.message && (
-                <div className="mb-3">
-                  <p className="text-xs text-gray-500 mb-1">Special Instructions:</p>
-                  <p className="text-xs text-gray-600">{order.message}</p>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-base sm:text-lg font-semibold text-gray-800">₹{order.total.toFixed(2)}</span>
-                </div>
-                <button 
-                  onClick={() => handleReorder(order)}
-                  disabled={reorderingOrderId === order.id}
-                  className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
-                    reorderingOrderId === order.id 
-                      ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
-                      : 'bg-teal-600 hover:bg-teal-700 text-white'
-                  }`}
-                >
-                  {reorderingOrderId === order.id ? (
-                    <>
-                      <div className="animate-spin h-3 w-3 sm:h-4 sm:w-4 border-2 border-white border-t-transparent rounded-full" />
-                      <span className="text-xs sm:text-sm font-medium">Loading...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw size={14} className="sm:w-4 sm:h-4" />
-                      <span className="text-xs sm:text-sm font-medium">{t('reorder')}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          ))
+                    {order.address && (
+                      <div className="mb-3">
+                        <p className="text-xs text-gray-500 mb-1">Delivery Address:</p>
+                        <p className="text-xs text-gray-600">{order.address.label} - {order.address.details}</p>
+                      </div>
+                    )}
+                    {order.message && (
+                      <div className="mb-3">
+                        <p className="text-xs text-gray-500 mb-1">Special Instructions:</p>
+                        <p className="text-xs text-gray-600">{order.message}</p>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-base sm:text-lg font-semibold text-gray-800">₹{order.total.toFixed(2)}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleReorder(order)}
+                        disabled={reorderingOrderId === order.id}
+                        className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
+                          reorderingOrderId === order.id 
+                            ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
+                            : 'bg-teal-600 hover:bg-teal-700 text-white'
+                        }`}
+                      >
+                        {reorderingOrderId === order.id ? (
+                          <>
+                            <div className="animate-spin h-3 w-3 sm:h-4 sm:w-4 border-2 border-white border-t-transparent rounded-full" />
+                            <span className="text-xs sm:text-sm font-medium">Loading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw size={14} className="sm:w-4 sm:h-4" />
+                            <span className="text-xs sm:text-sm font-medium">{t('reorder')}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              } else {
+                // Delivered order: show summary with expand/collapse
+                const isOpen = expanded[order.id] || false;
+                return (
+                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 mb-2">
+                    <button
+                      className="w-full flex items-center justify-between p-3 sm:p-4 focus:outline-none hover:bg-gray-50 transition-colors"
+                      onClick={() => setExpanded(prev => ({ ...prev, [order.id]: !isOpen }))}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="text-green-500" size={18} />
+                        <span className="font-semibold text-gray-800 text-sm sm:text-base">
+                          Order #{order.orderNumber || order.id.slice(-6)}
+                        </span>
+                        <span className="text-xs text-gray-500 ml-2">{formatDate(order)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-green-700 bg-green-50 rounded px-2 py-1">Delivered</span>
+                        <span className="text-gray-400 text-sm">{isOpen ? '−' : '+'}</span>
+                      </div>
+                    </button>
+                    {isOpen && (
+                      <div className="px-3 pb-3 sm:px-4">
+                        <OrderStatusTracker status={order.status} statusHistory={order.statusHistory} />
+                        <div className="mb-3">
+                          <p className="text-xs text-gray-500 mb-2">{order.items.length} item(s)</p>
+                          <div className="space-y-1">
+                            {order.items.slice(0, 3).map((item, idx) => (
+                              <div key={idx} className="text-xs text-gray-600 flex justify-between">
+                                <span>{item.quantity}x {item.name}</span>
+                                <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                              </div>
+                            ))}
+                            {order.items.length > 3 && (
+                              <div className="text-xs text-gray-500">
+                                +{order.items.length - 3} more items
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {order.address && (
+                          <div className="mb-3">
+                            <p className="text-xs text-gray-500 mb-1">Delivery Address:</p>
+                            <p className="text-xs text-gray-600">{order.address.label} - {order.address.details}</p>
+                          </div>
+                        )}
+                        {order.message && (
+                          <div className="mb-3">
+                            <p className="text-xs text-gray-500 mb-1">Special Instructions:</p>
+                            <p className="text-xs text-gray-600">{order.message}</p>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <span className="text-base sm:text-lg font-semibold text-gray-800">₹{order.total.toFixed(2)}</span>
+                          </div>
+                          <button 
+                            onClick={() => handleReorder(order)}
+                            disabled={reorderingOrderId === order.id}
+                            className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
+                              reorderingOrderId === order.id 
+                                ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
+                                : 'bg-teal-600 hover:bg-teal-700 text-white'
+                            }`}
+                          >
+                            {reorderingOrderId === order.id ? (
+                              <>
+                                <div className="animate-spin h-3 w-3 sm:h-4 sm:w-4 border-2 border-white border-t-transparent rounded-full" />
+                                <span className="text-xs sm:text-sm font-medium">Loading...</span>
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw size={14} className="sm:w-4 sm:h-4" />
+                                <span className="text-xs sm:text-sm font-medium">{t('reorder')}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+            })}
+          </>
         )}
       </div>
     </div>
