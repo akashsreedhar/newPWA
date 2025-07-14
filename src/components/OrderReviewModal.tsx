@@ -235,7 +235,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       const orderData = await orderResponse.json();
       
       const options = {
-        key: 'rzp_test_zkGVsDujuT26zg', // Your test key
+        key: 'rzp_live_fI0F8IVzgfDwNs', // Your test key
         amount: orderData.amount,
         currency: orderData.currency,
         name: 'SuperMarket',
