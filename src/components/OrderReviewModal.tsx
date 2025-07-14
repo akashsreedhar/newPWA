@@ -152,6 +152,16 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   const totalSavings = totalMRP - total;
   const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
+  // COD disable logic
+  const isCodDisabled = total > 1000;
+
+  // Auto-switch to online if COD is disabled and user tries to select COD
+  useEffect(() => {
+    if (isCodDisabled && paymentMethod === 'cod') {
+      setPaymentMethod('online');
+    }
+  }, [isCodDisabled, paymentMethod]);
+
   // Address handlers
   const handleSaveAddress = async (address: Address, action: 'add' | 'edit') => {
     setError(null);
@@ -479,6 +489,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               )}
               <h2 className="text-xl font-bold text-center mb-4">🛒 Review Your Order</h2>
 
+              
+              
+
               <div className="flex-1 min-h-0 overflow-y-auto pb-4" style={{marginBottom: '7rem'}}>
                 {/* Registration warning */}
                 {disableOrderReview && step === 'idle' && (
@@ -560,15 +573,23 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 {/* Payment Method Selection */}
                 <div className="mb-4">
                   <div className="font-semibold mb-2">Payment Method</div>
+                  {isCodDisabled && (
+                    <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-2 rounded mb-2 text-xs">
+                     Cash on Delivery is not available for this order. Please use Pay Now.
+                    </div>
+                  )}
                   <div className="space-y-2">
-                    <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                    <label className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${isCodDisabled ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}>
                       <input
                         type="radio"
                         name="paymentMethod"
                         value="cod"
                         checked={paymentMethod === 'cod'}
-                        onChange={(e) => setPaymentMethod(e.target.value as 'cod')}
+                        onChange={(e) => {
+                          if (!isCodDisabled) setPaymentMethod(e.target.value as 'cod');
+                        }}
                         className="mr-3 text-teal-600"
+                        disabled={isCodDisabled}
                       />
                       <div className="flex items-center">
                         <span className="text-2xl mr-2">💵</span>
@@ -687,7 +708,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                       </span>
                     </div>
                   ) : verifyingPayment ? (
-                    <span>Please wait...</span>
+                    <span>Please wait, we are verifying your payment...</span>
                   ) : step === 'payment' || processingPayment ? (
                     <span>Opening Payment...</span>
                   ) : step === 'confetti' || step === 'checkmark' || paymentCompleted ? (
