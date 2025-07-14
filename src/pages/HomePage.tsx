@@ -147,6 +147,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   ];
 
+  // Filter out unavailable products for display
+  const availableProducts = products.filter(p => p.available !== false);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -214,7 +217,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       <div className="p-3 sm:p-4">
         <h2 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Featured Products</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          {products.slice(0, 6).map(item => (
+          {availableProducts.slice(0, 6).map(item => (
             <ProductCard 
               key={item.id} 
               id={item.id}
@@ -236,7 +239,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       <div className="p-3 sm:p-4">
         <h2 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">All Products</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          {products.map(item => (
+          {availableProducts.map(item => (
             <ProductCard 
               key={item.id} 
               id={item.id}

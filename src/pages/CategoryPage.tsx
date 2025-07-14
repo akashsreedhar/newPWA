@@ -107,8 +107,8 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
 
   // Check if this is a main category and get subcategories (memoized to prevent infinite re-renders)
   const isMainCategory = categoryMapping[category] !== undefined;
-  const subcategories = useMemo(() => 
-    isMainCategory ? categoryMapping[category] : [], 
+  const subcategories = useMemo(() =>
+    isMainCategory ? categoryMapping[category] : [],
     [category, isMainCategory]
   );
 
@@ -122,29 +122,29 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
       setLoading(true);
       try {
         console.log('🔍 [CategoryPage] Fetching products for category:', category, 'subcategory:', selectedSubcategory);
-        
+
         let fetchedProducts: Product[] = [];
-        
+
         if (selectedSubcategory) {
           // Fetch products for specific subcategory
           console.log('📂 Fetching products for subcategory:', selectedSubcategory);
           const q = query(collection(db, 'products'), where('category', '==', selectedSubcategory));
           const snap = await getDocs(q);
-          fetchedProducts = snap.docs.map(doc => ({ 
-            id: doc.id, 
-            ...doc.data() 
+          fetchedProducts = snap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
           } as Product));
         } else if (isMainCategory) {
           // This is a main category, fetch products from all subcategories
           console.log('📂 Main category detected, fetching from subcategories:', subcategories.map(s => s.id));
-          
+
           // Fetch all products and filter by subcategories
           const allProductsQuery = collection(db, 'products');
           const allProductsSnapshot = await getDocs(allProductsQuery);
-          
+
           fetchedProducts = allProductsSnapshot.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as Product))
-            .filter(product => 
+            .filter(product =>
               product.category && subcategories.some(sub => sub.id === product.category)
             );
         } else {
@@ -152,12 +152,15 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
           console.log('📂 Direct subcategory detected');
           const q = query(collection(db, 'products'), where('category', '==', category));
           const snap = await getDocs(q);
-          fetchedProducts = snap.docs.map(doc => ({ 
-            id: doc.id, 
-            ...doc.data() 
+          fetchedProducts = snap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
           } as Product));
         }
-        
+
+        // Filter out unavailable products
+        fetchedProducts = fetchedProducts.filter(product => product.available !== false);
+
         console.log('📦 [CategoryPage] Fetched products count:', fetchedProducts.length);
         setProducts(fetchedProducts);
       } catch (error) {
@@ -175,7 +178,7 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
   const handleProductClick = async (productId: string) => {
     // Find the product in current list first
     let product = products.find(p => p.id === productId);
-    
+
     if (!product) {
       // If not found, fetch from Firestore (shouldn't happen in category view, but safety)
       try {
@@ -248,7 +251,7 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
             </div>
           </div>
         )}
-        
+
         {/* Loading */}
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-green-600 border-t-transparent"></div>
@@ -380,24 +383,21 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
       {products.length > 0 ? (
         <div className="p-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-            {sortedProducts
-              .filter(product => product.available !== false)
-              .map(product => (
-                <ProductCard
-                  key={product.id}
-                  id={product.id}
-                  name={product.name_en || product.name || ''}
-                  malayalamName={product.name_ml}
-                  manglishName={product.name_manglish}
-                  price={product.price || 0}
-                  mrp={product.mrp}
-                  sellingPrice={product.sellingPrice}
-                  imageUrl={product.imageUrl}
-                  netQuantity={product.netQuantity}
-                  onProductClick={handleProductClick}
-                />
-              ))
-            }
+            {sortedProducts.map(product => (
+              <ProductCard
+                key={product.id}
+                id={product.id}
+                name={product.name_en || product.name || ''}
+                malayalamName={product.name_ml}
+                manglishName={product.name_manglish}
+                price={product.price || 0}
+                mrp={product.mrp}
+                sellingPrice={product.sellingPrice}
+                imageUrl={product.imageUrl}
+                netQuantity={product.netQuantity}
+                onProductClick={handleProductClick}
+              />
+            ))}
           </div>
         </div>
       ) : (

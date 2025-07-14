@@ -135,23 +135,29 @@ const BeautyPersonalCarePage: React.FC<BeautyPersonalCarePageProps> = ({
     async function fetchFeaturedProducts() {
       setLoading(true);
       try {
-        console.log('🔍 Fetching featured products for Beauty & Personal Care');
-        
         // Get all new categories that map to Beauty & Personal Care
-        const beautyCategories = ['Bath & Body', 'Hair', 'Skin & Face', 'Feminine Hygiene', 'Baby Care', 'Beauty and Cosmetics'];
-        console.log('📂 Categories to fetch:', beautyCategories);
-        
+        const beautyCategories = [
+          'Bath & Body',
+          'Hair',
+          'Skin & Face',
+          'Feminine Hygiene',
+          'Baby Care',
+          'Beauty and Cosmetics'
+        ];
+
         const allProductsQuery = collection(db, 'products');
         const allProductsSnapshot = await getDocs(allProductsQuery);
-        
+
+        // Filter out unavailable products
         const beautyProducts = allProductsSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Product))
-          .filter(product => 
-            product.category && beautyCategories.includes(product.category) && product.available !== false
+          .filter(product =>
+            product.category &&
+            beautyCategories.includes(product.category) &&
+            product.available !== false
           )
           .slice(0, 10); // Limit to 10 featured products
 
-        console.log('📦 Fetched featured products count:', beautyProducts.length);
         setFeaturedProducts(beautyProducts);
       } catch (error) {
         console.error('Error fetching featured products:', error);
@@ -166,7 +172,7 @@ const BeautyPersonalCarePage: React.FC<BeautyPersonalCarePageProps> = ({
   const handleProductClick = async (productId: string) => {
     // Find the product in current list first
     let product = featuredProducts.find(p => p.id === productId);
-    
+
     if (!product) {
       // If not found, fetch from Firestore
       try {
@@ -188,14 +194,12 @@ const BeautyPersonalCarePage: React.FC<BeautyPersonalCarePageProps> = ({
 
   // Handle product selection from modal (receives full product object)
   const handleProductSelectFromModal = (product: Product) => {
-    console.log('🔄 Product selected from modal:', product.id);
     setSelectedProduct(product);
     // Keep modal open to show the new product
   };
 
   const handleSubcategoryClick = (subcategoryId: string) => {
     // Navigate directly to the new category
-    console.log('🔄 Subcategory clicked:', subcategoryId);
     onNavigateToCategory(subcategoryId);
   };
 

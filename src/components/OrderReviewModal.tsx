@@ -32,33 +32,46 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   loading = false,
 }) => {
   // Get the latest cart items directly from context as a backup
-  const { cartItems: contextCartItems } = useCart();
-  
+  const { cartItems: contextCartItems, removeFromCart, revalidateCartAvailability } = useCart();
+
   // Use context cart items if prop cart items seem stale
-  const cartItems = propCartItems && propCartItems.length > 0 ? propCartItems : contextCartItems;
-  
+  let cartItems = propCartItems && propCartItems.length > 0 ? propCartItems : contextCartItems;
+
+  // PATCH: Remove unavailable items before rendering (prevents ordering them)
+  useEffect(() => {
+    if (!open) return;
+    const unavailableItems = cartItems.filter(item => item.available === false);
+    if (unavailableItems.length > 0) {
+      unavailableItems.forEach(item => removeFromCart(item.id));
+    }
+    // eslint-disable-next-line
+  }, [open, cartItems, removeFromCart]);
+
+  // After removing unavailable, filter them out for display
+  cartItems = cartItems.filter(item => item.available !== false);
+
   // Payment method state
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
   const [processingPayment, setProcessingPayment] = useState(false);
 
   // NEW: State for payment verification
   const [verifyingPayment, setVerifyingPayment] = useState(false);
-  
+
   // Animation/order state machine: 'idle' | 'progress' | 'payment' | 'confetti' | 'checkmark'
   const [step, setStep] = useState<'idle' | 'progress' | 'payment' | 'confetti' | 'checkmark'>('idle');
   const [progress, setProgress] = useState(0);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [paymentCompleted, setPaymentCompleted] = useState(false);
-  
+
   // Animation timers
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const confettiTimeout = useRef<NodeJS.Timeout | null>(null);
   const checkmarkTimeout = useRef<NodeJS.Timeout | null>(null);
   const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
-  
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
-  
+
   const {
     addresses,
     selectedAddress,
@@ -69,7 +82,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     refreshAddresses,
     error: addressesError
   } = useAddresses(userId);
-  
+
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [addressModalMode, setAddressModalMode] = useState<'list' | 'add' | 'edit'>('list');
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
@@ -81,7 +94,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.async = true;
     document.body.appendChild(script);
-    
+
     return () => {
       try {
         document.body.removeChild(script);
@@ -215,7 +228,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
 
     setProcessingPayment(true);
     setVerifyingPayment(false);
-    
+
     try {
       // Create Razorpay order
       const orderResponse = await fetch('https://supermarket-backend-ytrh.onrender.com/create-razorpay-order', {
@@ -233,9 +246,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       }
 
       const orderData = await orderResponse.json();
-      
+
       const options = {
-        key: 'rzp_live_fI0F8IVzgfDwNs', // Your test key
+        key: 'rzp_live_fI0F8IVzgfDwNs',
         amount: orderData.amount,
         currency: orderData.currency,
         name: 'SuperMarket',
@@ -286,9 +299,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
         },
         handler: async (response: any) => {
           console.log('💳 Payment successful:', response);
-          
+
           try {
-            // NEW: Show verifying payment state
             setVerifyingPayment(true);
 
             // Verify payment
@@ -307,12 +319,12 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             }
 
             const verifyData = await verifyResponse.json();
-            
+
             if (verifyData.status === 'success') {
               setPaymentCompleted(true);
               setProcessingPayment(false);
               setVerifyingPayment(false);
-              
+
               // Place order with payment data
               if (onPlaceOrder) {
                 onPlaceOrder({
@@ -328,7 +340,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   }
                 });
               }
-              
+
               // Start success animation
               setStep('confetti');
               confettiTimeout.current = setTimeout(() => {
@@ -337,7 +349,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   if (onClearCart) onClearCart();
                   if (onNavigateToOrders) onNavigateToOrders();
                   if (onClose) onClose();
-                  
+
                   redirectTimeout.current = setTimeout(() => {
                     setStep('idle');
                     setOrderPlaced(false);
@@ -366,13 +378,13 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           }
         },
         theme: {
-          color: '#14b8a6' // Teal color to match your app
+          color: '#14b8a6'
         }
       };
 
       const razorpay = new window.Razorpay(options);
       razorpay.open();
-      
+
     } catch (error) {
       console.error('❌ Razorpay payment error:', error);
       setError('Payment failed. Please try again.');
@@ -383,8 +395,29 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   };
 
   // Handle place order
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     setError(null);
+
+    // PATCH: Revalidate cart availability before placing order
+    if (revalidateCartAvailability) {
+      const unavailableItems = await revalidateCartAvailability();
+      if (unavailableItems.length > 0) {
+        setError(
+          `Some items are out of stock: ${unavailableItems.map(i => i.name).join(', ')}`
+        );
+        return;
+      }
+    }
+
+    // AVAILABILITY CHECK (should never trigger now, but keep for safety)
+    const unavailableItems = cartItems.filter(item => item.available === false);
+    if (unavailableItems.length > 0) {
+      setError(
+        `Some items are out of stock: ${unavailableItems.map(i => i.name).join(', ')}`
+      );
+      return;
+    }
+
     if (!selectedAddress) {
       setError('Please select a delivery address.');
       return;
@@ -396,7 +429,6 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     if (step !== 'idle') return;
 
     if (paymentMethod === 'cod') {
-      // COD flow - same as before
       setStep('progress');
       let prog = 0;
       setProgress(0);
@@ -406,18 +438,18 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           prog = 100;
           setProgress(100);
           clearInterval(progressInterval.current!);
-          
+
           if (!orderPlaced) {
             setOrderPlaced(true);
             if (onPlaceOrder) {
-              onPlaceOrder({ 
-                address: selectedAddress, 
-                message, 
-                paymentMethod: 'cod' 
+              onPlaceOrder({
+                address: selectedAddress,
+                message,
+                paymentMethod: 'cod'
               });
             }
           }
-          
+
           setTimeout(() => {
             setStep('confetti');
             confettiTimeout.current = setTimeout(() => {
@@ -426,7 +458,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 if (onClearCart) onClearCart();
                 if (onNavigateToOrders) onNavigateToOrders();
                 if (onClose) onClose();
-                
+
                 redirectTimeout.current = setTimeout(() => {
                   setStep('idle');
                   setOrderPlaced(false);
@@ -440,7 +472,6 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
         }
       }, 120);
     } else {
-      // Online payment flow
       setStep('payment');
       handleRazorpayPayment();
     }
@@ -467,11 +498,11 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
         mode={addressModalMode}
         setMode={setAddressModalMode}
       />
-      
+
       {/* Order Review Modal */}
       {open && !addressModalOpen && (
         <div>
-          <div 
+          <div
             className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-70"
             onClick={(e) => {
               if (step !== 'idle') {
@@ -480,7 +511,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               }
             }}
           >
-            <div 
+            <div
               className="bg-white rounded-t-2xl shadow-lg w-full max-w-md pt-4 px-4 relative flex flex-col max-h-[calc(100vh-8px)] h-auto"
               onClick={(e) => e.stopPropagation()}
             >
@@ -489,10 +520,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               )}
               <h2 className="text-xl font-bold text-center mb-4">🛒 Review Your Order</h2>
 
-              
-              
-
-              <div className="flex-1 min-h-0 overflow-y-auto pb-4" style={{marginBottom: '7rem'}}>
+              <div className="flex-1 min-h-0 overflow-y-auto pb-4" style={{ marginBottom: '7rem' }}>
                 {/* Registration warning */}
                 {disableOrderReview && step === 'idle' && (
                   <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded mb-4">
@@ -575,7 +603,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   <div className="font-semibold mb-2">Payment Method</div>
                   {isCodDisabled && (
                     <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-2 rounded mb-2 text-xs">
-                     Cash on Delivery is not available for this order. Please use Pay Now.
+                      Cash on Delivery is not available for this order. Please use Pay Now.
                     </div>
                   )}
                   <div className="space-y-2">
@@ -599,7 +627,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                         </div>
                       </div>
                     </label>
-                    
+
                     <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
                       <input
                         type="radio"
@@ -640,7 +668,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                       const finalMrp = item.mrp || item.sellingPrice || item.price;
                       const finalSellingPrice = item.sellingPrice || item.price;
                       const hasOffer = finalMrp > finalSellingPrice;
-                      
+
                       return (
                         <div key={item.id || idx} className="flex justify-between py-2">
                           <div>
@@ -658,13 +686,16 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                             ) : (
                               <div className="text-xs text-gray-500">₹{finalSellingPrice} × {item.quantity}</div>
                             )}
+                            {item.available === false && (
+                              <div className="text-xs text-red-600 font-semibold mt-1">Out of Stock</div>
+                            )}
                           </div>
                           <div className="font-semibold text-teal-600">₹{(finalSellingPrice * item.quantity).toFixed(2)}</div>
                         </div>
                       );
                     })}
                   </div>
-                  
+
                   {/* Savings display */}
                   {totalSavings > 0 && (
                     <div className="bg-green-50 rounded p-2 mb-2 space-y-1">
@@ -678,7 +709,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="flex justify-between items-center bg-teal-50 rounded p-2 mt-2">
                     <span className="font-semibold">Total</span>
                     <span className="font-bold text-lg text-teal-700">₹{total.toFixed(2)}</span>
@@ -687,7 +718,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white'}}>
+              <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white' }}>
                 <button
                   className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${
                     disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment
@@ -723,7 +754,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                     </>
                   )}
                 </button>
-                
+
                 <button
                   className="w-full py-2 rounded-lg font-semibold border border-gray-300 text-gray-600 hover:bg-gray-100"
                   onClick={onClose}
@@ -736,7 +767,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           </div>
         </div>
       )}
-      
+
       {/* Confetti Animation */}
       {step === 'confetti' && (
         <div style={{
@@ -761,7 +792,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           />
         </div>
       )}
-      
+
       {/* Success Checkmark */}
       {step === 'checkmark' && (
         <div style={{
@@ -779,11 +810,11 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           backdropFilter: 'blur(8px)',
           animation: 'fadeInOverlay 0.4s ease-out',
         }}>
-          <div style={{ 
-            textAlign: 'center', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
+          <div style={{
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
             gap: 32,
             transform: 'scale(0.9)',
             animation: 'scaleInBounce 0.6s cubic-bezier(.68,-0.55,.27,1.55) forwards'
@@ -811,16 +842,16 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 border: '3px solid rgba(16,185,129,0.3)',
                 animation: 'expandRing 1.2s ease-out infinite',
               }} />
-              
+
               {/* Checkmark */}
               <svg width="90" height="90" viewBox="0 0 90 90" style={{ display: 'block', zIndex: 2 }}>
-                <circle 
-                  cx="45" 
-                  cy="45" 
-                  r="40" 
-                  fill="none" 
-                  stroke="rgba(255,255,255,0.2)" 
-                  strokeWidth="2" 
+                <circle
+                  cx="45"
+                  cy="45"
+                  r="40"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.2)"
+                  strokeWidth="2"
                 />
                 <polyline
                   points="25,47 40,62 70,32"
@@ -837,7 +868,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   }}
                 />
               </svg>
-              
+
               {/* Sparkle effects */}
               <div style={{
                 position: 'absolute',
@@ -860,7 +891,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 animation: 'sparkle2 1.8s 0.3s ease-out infinite',
               }} />
             </div>
-            
+
             {/* Success Text */}
             <div style={{
               fontSize: 42,
@@ -876,7 +907,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             }}>
               {paymentMethod === 'cod' ? 'Order Placed!' : 'Payment Successful!'}
             </div>
-            
+
             {/* Subtitle */}
             <div style={{
               fontSize: 20,
@@ -895,7 +926,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               </span>
             </div>
           </div>
-          
+
           {/* CSS Animations */}
           <style>{`
             @keyframes drawCheckmark {

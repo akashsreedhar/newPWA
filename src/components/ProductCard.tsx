@@ -4,6 +4,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { useCartAnimation } from '../contexts/CartAnimationContext';
 import { useProductLanguage } from '../hooks/useProductLanguage';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface ProductCardProps {
   id: string;
@@ -18,9 +20,23 @@ interface ProductCardProps {
   imageUrl?: string;
   netQuantity?: string;
   onProductClick?: (productId: string) => void;
+  available?: boolean; // <-- Add available prop for robust UI
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, manglishName, mrp, sellingPrice, unit, image, imageUrl, netQuantity, onProductClick }) => {
+const ProductCard: React.FC<ProductCardProps> = ({
+  id,
+  name,
+  malayalamName,
+  manglishName,
+  mrp,
+  sellingPrice,
+  unit,
+  image,
+  imageUrl,
+  netQuantity,
+  onProductClick,
+  available = true // default to true for backward compatibility
+}) => {
   const { t } = useLanguage();
   const { cartItems, addToCart, updateQuantity } = useCart();
   const { formatProductName } = useProductLanguage();
@@ -28,38 +44,60 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
 
   const cartItem = cartItems.find(item => item.id === id);
   const quantity = cartItem?.quantity || 0;
-  
+
   // Calculate pricing values - mrp and sellingPrice are now required
   const finalMrp = mrp || 0;
   const finalSellingPrice = sellingPrice || mrp || 0;
   const hasOffer = finalMrp > 0 && finalSellingPrice > 0 && finalMrp > finalSellingPrice;
   const discountPercentage = hasOffer ? Math.round(((finalMrp - finalSellingPrice) / finalMrp) * 100) : 0;
 
-  const handleAddToCart = () => {
-    const productName = formatProductName({
-      name,
-      malayalamName,
-      manglishName
-    });
-    
-    // Calculate savings for animation
-    const savings = hasOffer ? finalMrp - finalSellingPrice : undefined;
-    
-    showAnimation(productName, savings);
-    
-    // Always pass both image and imageUrl for cart compatibility
-    addToCart({
-      id,
-      name,
-      malayalamName: malayalamName || '',
-      manglishName: manglishName || '',
-      price: finalSellingPrice, // Use selling price as price for legacy compatibility
-      mrp: finalMrp,
-      sellingPrice: finalSellingPrice,
-      unit: unit || '',
-      image: image || imageUrl || '',
-      imageUrl: imageUrl || image || ''
-    }, false); // Don't trigger context animation since we're handling it manually
+  // PATCH: Always check latest availability before adding to cart
+  const handleAddToCart = async () => {
+    // Fetch latest product data from Firestore
+    try {
+      const productDoc = await getDoc(doc(db, 'products', id));
+      if (!productDoc.exists()) {
+        alert('Product no longer exists.');
+        return;
+      }
+      const productData = productDoc.data();
+      if (productData.available === false) {
+        alert('Sorry, this product is now out of stock.');
+        return;
+      }
+
+      const productName = formatProductName({
+        name: productData.name || name,
+        malayalamName: productData.name_ml || malayalamName,
+        manglishName: productData.name_manglish || manglishName
+      });
+
+      // Calculate savings for animation
+      const latestMrp = productData.mrp || finalMrp;
+      const latestSellingPrice = productData.sellingPrice || productData.price || finalSellingPrice;
+      const savings = latestMrp > latestSellingPrice ? latestMrp - latestSellingPrice : undefined;
+
+      showAnimation(productName, savings);
+
+      // Always pass both image and imageUrl for cart compatibility
+      addToCart(
+        {
+          id,
+          name: productData.name || name,
+          malayalamName: productData.name_ml || malayalamName || '',
+          manglishName: productData.name_manglish || manglishName || '',
+          price: latestSellingPrice,
+          mrp: latestMrp,
+          sellingPrice: latestSellingPrice,
+          unit: productData.unit || unit || '',
+          image: productData.image || productData.imageUrl || image || imageUrl || '',
+          imageUrl: productData.imageUrl || productData.image || imageUrl || image || ''
+        },
+        false // Don't trigger context animation since we're handling it manually
+      );
+    } catch (err) {
+      alert('Could not add to cart. Please try again.');
+    }
   };
 
   const handleUpdateQuantity = (newQuantity: number) => {
@@ -86,16 +124,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
           </span>
         </div>
       )}
-      
-      <div 
+
+      <div
         className="w-full aspect-square bg-gray-50 flex items-center justify-center relative overflow-hidden cursor-pointer"
         onClick={() => onProductClick?.(id)}
       >
-        <img src={imgSrc} alt={name} className="w-full h-full object-cover object-center max-h-40 min-h-32" style={{aspectRatio:'1/1'}} />
+        <img src={imgSrc} alt={name} className="w-full h-full object-cover object-center max-h-40 min-h-32" style={{ aspectRatio: '1/1' }} />
+        {!available && (
+          <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-20">
+            <span className="text-red-600 font-bold text-base sm:text-lg">Out of Stock</span>
+          </div>
+        )}
       </div>
-      
+
       <div className="p-3 sm:p-4 flex flex-col flex-1 min-h-0">
-        <div 
+        <div
           className="flex-1 mb-3 min-h-[48px] cursor-pointer"
           onClick={() => onProductClick?.(id)}
         >
@@ -104,7 +147,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
             <p className="text-xs sm:text-sm text-gray-500">{netQuantity}</p>
           )}
         </div>
-        
+
         <div className="flex items-center justify-between gap-2 mt-auto">
           <div className="flex-shrink-0 flex-1 min-w-0">
             {hasOffer ? (
@@ -126,14 +169,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ id, name, malayalamName, mang
               </div>
             )}
           </div>
-          
+
+          {/* PATCH: Disable Add to Cart if unavailable */}
           {quantity === 0 ? (
             <button
               onClick={handleAddToCart}
-              className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors min-w-[70px] sm:min-w-[80px] justify-center flex-shrink-0"
+              className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors min-w-[70px] sm:min-w-[80px] justify-center flex-shrink-0
+                ${available ? 'bg-teal-600 hover:bg-teal-700 text-white' : 'bg-gray-300 text-gray-400 cursor-not-allowed'}
+              `}
+              disabled={!available}
+              aria-disabled={!available}
             >
               <Plus size={16} className="sm:w-4 sm:h-4" />
-              <span className="font-medium text-xs sm:text-sm">{t('add')}</span>
+              <span className="font-medium text-xs sm:text-sm">
+                {available ? t('add') : 'Out of Stock'}
+              </span>
             </button>
           ) : (
             <div className="flex items-center gap-1 sm:gap-2 bg-teal-50 rounded-lg p-1 flex-shrink-0 border border-teal-200">

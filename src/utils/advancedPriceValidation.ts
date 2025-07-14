@@ -31,12 +31,26 @@ export interface EnhancedPriceValidationResult {
  * Production-grade price validation with caching, batching, and risk assessment
  * Set forceFresh=true to bypass cache for critical operations like checkout
  */
-export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: boolean = false): Promise<EnhancedPriceValidationResult> => {
+export const validateCartPricesAdvanced = async (
+  cartItems: any[],
+  forceFresh: boolean = false
+): Promise<EnhancedPriceValidationResult> => {
   const validationTimestamp = new Date().toISOString();
-  const updatedItems = [];
-  const priceChanges = [];
-  const unavailableItems = [];
-  const stockWarnings = [];
+  const updatedItems: any[] = [];
+  const priceChanges: {
+    itemId: string;
+    itemName: string;
+    oldPrice: number;
+    newPrice: number;
+    percentageChange: number;
+  }[] = [];
+  const unavailableItems: any[] = [];
+  const stockWarnings: {
+    itemId: string;
+    itemName: string;
+    requestedQuantity: number;
+    availableStock: number;
+  }[] = [];
   let hasChanges = false;
   let totalPriceImpact = 0;
 
@@ -45,8 +59,8 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
   try {
     // Batch fetch for better performance
     const productIds = cartItems.map(item => item.id);
-    const cachedItems = new Map();
-    const itemsToFetch = [];
+    const cachedItems = new Map<string, { price: number; timestamp: number; ttl: number }>();
+    const itemsToFetch: string[] = [];
 
     // Check cache first (unless forcing fresh data)
     if (!forceFresh) {
@@ -65,10 +79,10 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
     }
 
     // Batch fetch uncached items
-    let freshData = new Map();
+    let freshData = new Map<string, any>();
     if (itemsToFetch.length > 0) {
       // Firebase doesn't support IN queries with more than 10 items, so batch them
-      const batches = [];
+      const batches: string[][] = [];
       for (let i = 0; i < itemsToFetch.length; i += 10) {
         batches.push(itemsToFetch.slice(i, i + 10));
       }
@@ -76,7 +90,7 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
       const batchPromises = batches.map(async (batch) => {
         const q = query(collection(db, 'products'), where('__name__', 'in', batch));
         const snapshot = await getDocs(q);
-        const batchData = new Map();
+        const batchData = new Map<string, any>();
         snapshot.forEach(doc => {
           const data = doc.data();
           batchData.set(doc.id, data);
@@ -100,11 +114,11 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
 
     // Process each cart item
     for (const cartItem of cartItems) {
-      let currentData;
-      
+      let currentData: any;
+
       // Get data from cache or fresh fetch
       if (cachedItems.has(cartItem.id)) {
-        currentData = { sellingPrice: cachedItems.get(cartItem.id).price };
+        currentData = { sellingPrice: cachedItems.get(cartItem.id)!.price };
       } else {
         currentData = freshData.get(cartItem.id);
       }
@@ -116,13 +130,13 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
         continue;
       }
 
-      const currentPrice = currentData.sellingPrice || currentData.price; // fallback to legacy field
+      const currentPrice = currentData.sellingPrice ?? currentData.price; // fallback to legacy field
       const oldPrice = cartItem.price;
 
       // Check for price changes
-      if (Math.abs(currentPrice - oldPrice) > 0.01) { // Account for floating point precision
+      if (typeof currentPrice === 'number' && typeof oldPrice === 'number' && Math.abs(currentPrice - oldPrice) > 0.01) {
         const percentageChange = ((currentPrice - oldPrice) / oldPrice) * 100;
-        
+
         priceChanges.push({
           itemId: cartItem.id,
           itemName: cartItem.name,
@@ -136,7 +150,10 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
       }
 
       // Check stock availability (if stock field exists)
-      if (currentData.stock !== undefined && currentData.stock < cartItem.quantity) {
+      if (
+        typeof currentData.stock === 'number' &&
+        currentData.stock < cartItem.quantity
+      ) {
         stockWarnings.push({
           itemId: cartItem.id,
           itemName: cartItem.name,
@@ -176,7 +193,7 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
 
   } catch (error) {
     console.error('Advanced price validation failed:', error);
-    
+
     // Fallback: return original items but mark as invalid
     return {
       isValid: false,
@@ -195,8 +212,8 @@ export const validateCartPricesAdvanced = async (cartItems: any[], forceFresh: b
  * Calculate risk level based on price changes
  */
 function calculateRiskLevel(
-  priceChanges: any[], 
-  totalPriceImpact: number, 
+  priceChanges: any[],
+  totalPriceImpact: number,
   unavailableCount: number
 ): 'low' | 'medium' | 'high' {
   const significantChanges = priceChanges.filter(change => Math.abs(change.percentageChange) > 5).length;

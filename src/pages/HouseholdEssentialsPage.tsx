@@ -117,15 +117,12 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
     async function fetchFeaturedProducts() {
       setLoading(true);
       try {
-        console.log('🔍 Fetching featured products for Household Essentials');
-        
         // Get all new categories that map to Household Essentials
         const householdCategories = ['Home & Lifestyle', 'Cleaners & Repellents', 'Electronics', 'Stationery & Games'];
-        console.log('📂 Categories to fetch:', householdCategories);
-        
         const allProductsQuery = collection(db, 'products');
         const allProductsSnapshot = await getDocs(allProductsQuery);
-        
+
+        // Filter out unavailable products
         const householdProducts = allProductsSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Product))
           .filter(product => 
@@ -133,7 +130,6 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
           )
           .slice(0, 10); // Limit to 10 featured products
 
-        console.log('📦 Fetched featured products count:', householdProducts.length);
         setFeaturedProducts(householdProducts);
       } catch (error) {
         console.error('Error fetching featured products:', error);
@@ -148,7 +144,7 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
   const handleProductClick = async (productId: string) => {
     // Find the product in current list first
     let product = featuredProducts.find(p => p.id === productId);
-    
+
     if (!product) {
       // If not found, fetch from Firestore
       try {
@@ -170,14 +166,12 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
 
   // Handle product selection from modal (receives full product object)
   const handleProductSelectFromModal = (product: Product) => {
-    console.log('🔄 Product selected from modal:', product.id);
     setSelectedProduct(product);
     // Keep modal open to show the new product
   };
 
   const handleSubcategoryClick = (subcategoryId: string) => {
     // Navigate directly to the new category
-    console.log('🔄 Subcategory clicked:', subcategoryId);
     onNavigateToCategory(subcategoryId);
   };
 

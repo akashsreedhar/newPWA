@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { validateCartPrices, PriceValidationResult } from '../utils/priceValidation';
+import { doc, getDoc, getDocs, query, where, collection } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export interface CartItem {
   id: string;
@@ -13,6 +15,7 @@ export interface CartItem {
   unit: string;
   image: string;
   imageUrl?: string; // Optional, for Firestore compatibility
+  available?: boolean; // <-- Add available property for runtime checks
 }
 
 export interface Order {
@@ -38,8 +41,9 @@ interface CartContextType {
   reorderItems: (items: CartItem[]) => void;
   validatePrices: () => Promise<PriceValidationResult>;
   updateCartPrices: (updatedItems: CartItem[]) => void;
-  validatePricesManually: () => Promise<PriceValidationResult>; // For manual cart page validation
-  onCartItemAdded?: (productName: string) => void; // Callback for animations
+  validatePricesManually: () => Promise<PriceValidationResult>;
+  onCartItemAdded?: (productName: string) => void;
+  revalidateCartAvailability: () => Promise<CartItem[]>; // <-- Add to context
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -95,39 +99,52 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
     localStorage.setItem("orders", JSON.stringify(orders));
   }, [orders]);
 
-  const addToCart = (item: Omit<CartItem, 'quantity'>, showAnimation: boolean = true) => {
-    setCartItems(prev => {
-      const existingItem = prev.find(cartItem => cartItem.id === item.id);
-      // Always ensure both image and imageUrl are set for cart compatibility
-      const imageUrl = (item as any).imageUrl || (item as any).image || '';
-      const image = (item as any).image || (item as any).imageUrl || '';
-      
-      // Ensure pricing fields are properly set
-      const itemWithComplete = { 
-        ...item, 
-        image, 
-        imageUrl,
-        // Ensure all pricing fields are set correctly
-        price: item.sellingPrice || 0, // Set price to sellingPrice for legacy compatibility
-        mrp: item.mrp || 0,
-        sellingPrice: item.sellingPrice || 0
-      };
-      
-      // Trigger animation callback if provided and it's a new item or showAnimation is true
-      if (showAnimation && onCartItemAdded) {
-        const productName = item.name || item.malayalamName || item.manglishName || 'Product';
-        onCartItemAdded(productName);
+  // PATCH: Always check latest availability before adding to cart
+  const addToCart = async (item: Omit<CartItem, 'quantity'>, showAnimation: boolean = true) => {
+    try {
+      const productDoc = await getDoc(doc(db, 'products', item.id));
+      if (!productDoc.exists()) {
+        alert('Product no longer exists.');
+        return;
       }
-      
-      if (existingItem) {
-        return prev.map(cartItem =>
-          cartItem.id === item.id
-            ? { ...cartItem, quantity: cartItem.quantity + 1 }
-            : cartItem
-        );
+      const productData = productDoc.data();
+      if (productData.available === false) {
+        alert('Sorry, this product is now out of stock.');
+        return;
       }
-      return [...prev, { ...itemWithComplete, quantity: 1 }];
-    });
+
+      setCartItems(prev => {
+        const existingItem = prev.find(cartItem => cartItem.id === item.id);
+        const imageUrl = (item as any).imageUrl || (item as any).image || '';
+        const image = (item as any).image || (item as any).imageUrl || '';
+
+        const itemWithComplete = {
+          ...item,
+          image,
+          imageUrl,
+          price: item.sellingPrice || 0,
+          mrp: item.mrp || 0,
+          sellingPrice: item.sellingPrice || 0,
+          available: true // Always set available true if adding
+        };
+
+        if (showAnimation && onCartItemAdded) {
+          const productName = item.name || item.malayalamName || item.manglishName || 'Product';
+          onCartItemAdded(productName);
+        }
+
+        if (existingItem) {
+          return prev.map(cartItem =>
+            cartItem.id === item.id
+              ? { ...cartItem, quantity: cartItem.quantity + 1 }
+              : cartItem
+          );
+        }
+        return [...prev, { ...itemWithComplete, quantity: 1 }];
+      });
+    } catch (err) {
+      alert('Could not add to cart. Please try again.');
+    }
   };
 
   const removeFromCart = (id: string) => {
@@ -164,7 +181,6 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
 
   const getCartTotal = () => {
     return cartItems.reduce((total, item) => {
-      // Use price as the primary field for consistency with validation
       const itemPrice = item.price || item.sellingPrice || 0;
       return total + (itemPrice * item.quantity);
     }, 0);
@@ -182,11 +198,9 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
 
   const getTotalMRP = () => {
     return cartItems.reduce((total, item) => {
-      // Use MRP if available
       if (item.mrp) {
         return total + (item.mrp * item.quantity);
       }
-      // Fallback to current price if MRP not available
       const currentPrice = item.price || item.sellingPrice || 0;
       return total + (currentPrice * item.quantity);
     }, 0);
@@ -197,9 +211,7 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
   };
 
   const reorderItems = (items: CartItem[]) => {
-    // Clear current cart and add all items from the previous order
     setCartItems([...items]);
-    // Save to localStorage
     try {
       localStorage.setItem("cart", JSON.stringify(items));
       console.log('🔄 Reorder: Added', items.length, 'items to cart');
@@ -218,15 +230,13 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       setPriceValidationInProgress(true);
       const result = await validateCartPrices(cartItems);
       setLastPriceCheck(Date.now());
-      
+
       console.log('🔍 Cart validation result:', result);
-      
-      // If prices have changed, do NOT automatically update the cart
-      // Let the user decide via the price change modal
+
       if (result.hasChanges && result.priceChanges.length > 0) {
         console.log('⚠️ Price changes detected - user intervention required');
       }
-      
+
       return result;
     } catch (error) {
       console.error('Price validation failed:', error);
@@ -237,13 +247,12 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
   };
 
   const validatePricesManually = async (): Promise<PriceValidationResult> => {
-    // Force validation regardless of timing - for manual cart page checks
     try {
       const result = await validateCartPrices(cartItems);
       setLastPriceCheck(Date.now());
-      
+
       console.log('Manual price validation result:', result);
-      
+
       return result;
     } catch (error) {
       console.error('Manual price validation failed:', error);
@@ -258,17 +267,53 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       oldItems: cartItems.map(item => ({ id: item.id, name: item.name, price: item.price })),
       newItems: updatedItems.map(item => ({ id: item.id, name: item.name, price: item.price }))
     });
-    
-    // Update both state and localStorage immediately
+
     setCartItems(updatedItems);
     localStorage.setItem("cart", JSON.stringify(updatedItems));
-    
+
     console.log('✅ Cart prices updated successfully');
-    
-    // Trigger immediate custom event for synchronization
-    window.dispatchEvent(new CustomEvent('cartUpdated', { 
-      detail: { updatedItems, timestamp: Date.now() } 
+
+    window.dispatchEvent(new CustomEvent('cartUpdated', {
+      detail: { updatedItems, timestamp: Date.now() }
     }));
+  };
+
+  // --- AVAILABILITY REVALIDATION LOGIC ---
+  // This function checks the latest availability for all cart items from Firestore
+  const revalidateCartAvailability = async (): Promise<CartItem[]> => {
+    const ids = cartItems.map(item => item.id);
+    if (ids.length === 0) return [];
+
+    // Firestore 'in' queries are limited to 10 items per query
+    const chunkSize = 10;
+    let unavailableItems: CartItem[] = [];
+    let updatedCart: CartItem[] = [...cartItems];
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('__name__', 'in', chunk));
+      const snapshot = await getDocs(q);
+
+      const availabilityMap: Record<string, boolean> = {};
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        availabilityMap[docSnap.id] = data.available !== false;
+      });
+
+      updatedCart = updatedCart.map(item =>
+        chunk.includes(item.id)
+          ? { ...item, available: availabilityMap[item.id] !== undefined ? availabilityMap[item.id] : false }
+          : item
+      );
+    }
+
+    setCartItems(updatedCart);
+    localStorage.setItem("cart", JSON.stringify(updatedCart));
+
+    unavailableItems = updatedCart.filter(item => item.available === false);
+
+    return unavailableItems;
   };
 
   return (
@@ -288,7 +333,8 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       validatePrices,
       updateCartPrices,
       validatePricesManually,
-      onCartItemAdded
+      onCartItemAdded,
+      revalidateCartAvailability // <-- Make available in context
     }}>
       {children}
     </CartContext.Provider>

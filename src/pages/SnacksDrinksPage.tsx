@@ -135,23 +135,29 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
     async function fetchFeaturedProducts() {
       setLoading(true);
       try {
-        console.log('🔍 Fetching featured products for Snacks & Drinks');
-        
         // Get all new categories that map to Snacks & Drinks
-        const snackCategories = ['Chips', 'Sweet Chocolates', 'Bakery and Biscuits', 'Drinks and Juices', 'Tea, Coffee & Milk Drinks', 'Instant Food'];
-        console.log('📂 Categories to fetch:', snackCategories);
-        
+        const snackCategories = [
+          'Chips',
+          'Sweet Chocolates',
+          'Bakery and Biscuits',
+          'Drinks and Juices',
+          'Tea, Coffee & Milk Drinks',
+          'Instant Food'
+        ];
+
         const allProductsQuery = collection(db, 'products');
         const allProductsSnapshot = await getDocs(allProductsQuery);
-        
+
+        // Filter out unavailable products
         const snacksProducts = allProductsSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Product))
-          .filter(product => 
-            product.category && snackCategories.includes(product.category) && product.available !== false
+          .filter(product =>
+            product.category &&
+            snackCategories.includes(product.category) &&
+            product.available !== false
           )
           .slice(0, 10); // Limit to 10 featured products
 
-        console.log('📦 Fetched featured products count:', snacksProducts.length);
         setFeaturedProducts(snacksProducts);
       } catch (error) {
         console.error('Error fetching featured products:', error);
@@ -166,7 +172,7 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
   const handleProductClick = async (productId: string) => {
     // Find the product in current list first
     let product = featuredProducts.find(p => p.id === productId);
-    
+
     if (!product) {
       // If not found, fetch from Firestore
       try {
@@ -188,14 +194,12 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
 
   // Handle product selection from modal (receives full product object)
   const handleProductSelectFromModal = (product: Product) => {
-    console.log('🔄 Product selected from modal:', product.id);
     setSelectedProduct(product);
     // Keep modal open to show the new product
   };
 
   const handleSubcategoryClick = (subcategoryId: string) => {
     // Navigate directly to the new category
-    console.log('🔄 Subcategory clicked:', subcategoryId);
     onNavigateToCategory(subcategoryId);
   };
 
