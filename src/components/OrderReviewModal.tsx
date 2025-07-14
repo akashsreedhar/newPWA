@@ -40,6 +40,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   // Payment method state
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // NEW: State for payment verification
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
   
   // Animation/order state machine: 'idle' | 'progress' | 'payment' | 'confetti' | 'checkmark'
   const [step, setStep] = useState<'idle' | 'progress' | 'payment' | 'confetti' | 'checkmark'>('idle');
@@ -116,6 +119,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       setPaymentMethod('cod');
       setProcessingPayment(false);
       setPaymentCompleted(false);
+      setVerifyingPayment(false);
       setAddressModalOpen(false);
       setEditingAddress(null);
       setAddressModalMode('list');
@@ -200,6 +204,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     }
 
     setProcessingPayment(true);
+    setVerifyingPayment(false);
     
     try {
       // Create Razorpay order
@@ -273,6 +278,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           console.log('💳 Payment successful:', response);
           
           try {
+            // NEW: Show verifying payment state
+            setVerifyingPayment(true);
+
             // Verify payment
             const verifyResponse = await fetch('https://supermarket-backend-ytrh.onrender.com/verify-payment', {
               method: 'POST',
@@ -293,6 +301,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             if (verifyData.status === 'success') {
               setPaymentCompleted(true);
               setProcessingPayment(false);
+              setVerifyingPayment(false);
               
               // Place order with payment data
               if (onPlaceOrder) {
@@ -334,6 +343,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             console.error('❌ Payment verification error:', verifyError);
             setError('Payment verification failed. Please contact support.');
             setProcessingPayment(false);
+            setVerifyingPayment(false);
             setStep('idle');
           }
         },
@@ -341,6 +351,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           ondismiss: () => {
             console.log('💳 Payment cancelled by user');
             setProcessingPayment(false);
+            setVerifyingPayment(false);
             setStep('idle');
           }
         },
@@ -356,6 +367,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       console.error('❌ Razorpay payment error:', error);
       setError('Payment failed. Please try again.');
       setProcessingPayment(false);
+      setVerifyingPayment(false);
       setStep('idle');
     }
   };
@@ -674,6 +686,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                         {progress < 100 ? `Placing Order... ${Math.floor(progress)}%` : 'Order Placed!'}
                       </span>
                     </div>
+                  ) : verifyingPayment ? (
+                    <span>Please wait...</span>
                   ) : step === 'payment' || processingPayment ? (
                     <span>Opening Payment...</span>
                   ) : step === 'confetti' || step === 'checkmark' || paymentCompleted ? (
