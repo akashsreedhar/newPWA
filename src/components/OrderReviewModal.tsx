@@ -708,7 +708,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                       </span>
                     </div>
                   ) : verifyingPayment ? (
-                    <span>Please wait, we are verifying your payment...</span>
+                    <span>Verifying Payment...</span>
                   ) : step === 'payment' || processingPayment ? (
                     <span>Opening Payment...</span>
                   ) : step === 'confetti' || step === 'checkmark' || paymentCompleted ? (
