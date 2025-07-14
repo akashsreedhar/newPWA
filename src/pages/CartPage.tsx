@@ -238,7 +238,7 @@ const CartPage: React.FC<CartPageProps> = ({
     }
   };
 
-  // Accepts { address, message } from OrderReviewModal
+  // Accepts { address, message, paymentMethod, paymentData } from OrderReviewModal
   const [placingOrder, setPlacingOrder] = useState(false);
 
   // Handle proceed to checkout with production-grade price validation
@@ -375,8 +375,13 @@ const CartPage: React.FC<CartPageProps> = ({
     // No need to trigger validation again since we removed the problematic items
   };
 
-  // Only allow one order placement per user action
-  const handlePlaceOrder = async ({ address, message }: { address: any; message: string }) => {
+  // Updated handlePlaceOrder to support payment methods
+  const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData }: { 
+    address: any; 
+    message: string; 
+    paymentMethod: 'cod' | 'online';
+    paymentData?: any;
+  }) => {
     if (placingOrder) return;
     if (!userId || accessError || !address) {
       return;
@@ -388,7 +393,8 @@ const CartPage: React.FC<CartPageProps> = ({
     }
 
     setPlacingOrder(true);
-    // Compose order data
+    
+    // Compose order data with payment information
     const order = {
       user: userId,
       items: cartItems.map(item => ({
@@ -402,6 +408,18 @@ const CartPage: React.FC<CartPageProps> = ({
       address,
       message: message?.trim() || null,
       status: 'pending',
+      paymentMethod,
+      // Add payment data for online payments
+      ...(paymentMethod === 'online' && paymentData ? {
+        paymentStatus: 'paid',
+        razorpayOrderId: paymentData.razorpayOrderId,
+        razorpayPaymentId: paymentData.razorpayPaymentId,
+        razorpaySignature: paymentData.razorpaySignature,
+        paymentAmount: paymentData.amount,
+        paymentTimestamp: Timestamp.now()
+      } : {
+        paymentStatus: paymentMethod === 'cod' ? 'pending' : 'failed'
+      }),
       createdAt: Timestamp.now(),
       notified: false,
       orderNumber: `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`
@@ -416,7 +434,7 @@ const CartPage: React.FC<CartPageProps> = ({
       return;
     }
 
-    // --- Backend notification logic (optional, for parity) ---
+    // --- Backend notification logic (updated with payment info) ---
     try {
       // Notify staff
       await fetch('https://supermarket-backend-ytrh.onrender.com/notify-staff-new-order', {
@@ -424,12 +442,16 @@ const CartPage: React.FC<CartPageProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: order.orderNumber,
-          customerName: address?.name || 'Customer'
+          customerName: address?.name || 'Customer',
+          paymentMethod: order.paymentMethod,
+          paymentStatus: order.paymentStatus
         })
       });
     } catch (err) {
       // Optionally log, but don't block order
+      console.error('Failed to notify staff:', err);
     }
+    
     try {
       // Notify user (Telegram)
       await fetch('https://supermarket-backend-ytrh.onrender.com/notify-user-order', {
@@ -440,11 +462,14 @@ const CartPage: React.FC<CartPageProps> = ({
           chatId: userId,
           items: order.items,
           total: order.total,
-          status: order.status
+          status: order.status,
+          paymentMethod: order.paymentMethod,
+          paymentStatus: order.paymentStatus
         })
       });
     } catch (err) {
       // Optionally log
+      console.error('Failed to notify user:', err);
     }
     // --- End backend notification logic ---
 
@@ -453,7 +478,7 @@ const CartPage: React.FC<CartPageProps> = ({
     setPlacingOrder(false);
     // Do NOT close the modal here! Let OrderReviewModal handle closing and redirect after all animations.
     if (onOrderPlaced) {
-      onOrderPlaced(true, 'Order placed successfully!');
+      onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
     }
   };
 
