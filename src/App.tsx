@@ -17,7 +17,7 @@ import SnacksDrinksPage from './pages/SnacksDrinksPage';
 import BeautyPersonalCarePage from './pages/BeautyPersonalCarePage';
 import HouseholdEssentialsPage from './pages/HouseholdEssentialsPage';
 import { useAuth } from './hooks/useAuth.ts';
-
+import logo from './images/Logo.png';
 
 // --- Device Fingerprint Helper ---
 function getDeviceFingerprint() {
@@ -386,19 +386,48 @@ const AppInner: React.FC = () => {
   }
  if (authLoading) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
-      <div className="bg-teal-100 border border-teal-300 rounded-lg p-6 text-teal-800 max-w-md flex flex-col items-center">
-        <img
-          src="/Logo.png"
-          alt="7Days Hypermarket Logo"
-          className="w-32 h-32 object-contain mb-4"
-          draggable={false}
-        />
-        <div className="text-2xl mb-2 font-bold">Doors are opening...</div>
-        <div className="text-base text-teal-900">Hang tight! Your shopping adventure is about to begin 🛒✨</div>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center">
+      <img
+        src={logo}
+        alt="7Days Hypermarket Logo"
+        className="w-48 h-48 object-contain mb-8 animate-bounce-slow"
+        style={{ filter: 'drop-shadow(0 8px 32px rgba(20,184,166,0.25))' }}
+        draggable={false}
+      />
+      <div className="text-3xl font-extrabold text-white mb-2 animate-fade-in">
+        Hang tight!
       </div>
+      <div className="text-xl font-semibold text-teal-200 animate-shimmer">
+        Doors are opening...
+      </div>
+      {/* Animations */}
+      <style>{`
+        @keyframes bounce-slow {
+          0%, 100% { transform: translateY(0);}
+          50% { transform: translateY(-24px);}
+        }
+        .animate-bounce-slow {
+          animation: bounce-slow 2s infinite;
+        }
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(20px);}
+          to { opacity: 1; transform: translateY(0);}
+        }
+        .animate-fade-in {
+          animation: fade-in 1.2s cubic-bezier(.68,-0.55,.27,1.55) both;
+        }
+        @keyframes shimmer {
+          0% { opacity: 0.5; }
+          50% { opacity: 1; }
+          100% { opacity: 0.5; }
+        }
+        .animate-shimmer {
+          animation: shimmer 2s infinite;
+        }
+      `}</style>
     </div>
   );
+
   }
   if (accessError) {
     return (
