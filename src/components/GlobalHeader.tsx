@@ -22,6 +22,9 @@ interface GlobalHeaderProps {
   
   // Style
   variant?: 'default' | 'minimal' | 'search-focused';
+  
+  // User info
+  userName?: string; // <-- Added this line
 }
 
 const GlobalHeader: React.FC<GlobalHeaderProps> = ({
@@ -35,7 +38,8 @@ const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   searchPlaceholder,
   onCartClick,
   showCartButton = true,
-  variant = 'default'
+  variant = 'default',
+  userName // <-- Added this line
 }) => {
   const { t } = useLanguage();
   const { cartItems } = useCart(); // Use cartItems.length for unique product count
@@ -192,8 +196,10 @@ const GlobalHeader: React.FC<GlobalHeaderProps> = ({
             <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
           ) : (
             <div className="flex items-center text-gray-600">
-              <MapPin size={14} className="mr-1 sm:w-4 sm:h-4" />
-              <span className="text-xs sm:text-sm">Kochi, Kerala</span>
+              {/* Replace MapPin icon and "Kochi, Kerala" with greeting */}
+              <span className="text-xs sm:text-sm font-semibold">
+                {userName ? `Hi ${userName} !!` : 'Hi !!'}
+              </span>
             </div>
           )}
         </div>

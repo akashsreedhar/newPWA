@@ -17,6 +17,8 @@ import SnacksDrinksPage from './pages/SnacksDrinksPage';
 import BeautyPersonalCarePage from './pages/BeautyPersonalCarePage';
 import HouseholdEssentialsPage from './pages/HouseholdEssentialsPage';
 import { useAuth } from './hooks/useAuth.ts';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import logo from './images/Logo.png';
 
 // --- Device Fingerprint Helper ---
@@ -68,6 +70,7 @@ const AppInner: React.FC = () => {
   const [tgAccessError, setTgAccessError] = useState("");
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
 
   // Navigation state for pages
   const [currentPage, setCurrentPage] = useState<'home' | 'search' | 'category' | 'dedicated-category'>('home');
@@ -220,6 +223,28 @@ const AppInner: React.FC = () => {
   // --- Auth ---
   const { userId, accessError, loading: authLoading } = useAuth(fingerprint);
   console.log('App.tsx userId:', userId, 'accessError:', accessError, 'authLoading:', authLoading);
+
+  // Fetch user name when userId changes
+  useEffect(() => {
+    if (!userId) {
+      setUserName(null);
+      return;
+    }
+    (async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "users", String(userId)));
+        if (docSnap.exists()) {
+          const userData = docSnap.data();
+          setUserName(userData.name || null);
+        } else {
+          setUserName(null);
+        }
+      } catch {
+        setUserName(null);
+      }
+    })();
+  }, [userId]);
+
   // --- Cart ---
   // We'll use the context in the page components
 
@@ -620,6 +645,8 @@ if (authLoading) {
             title={tab === 'home' ? '' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             showSearch={tab !== 'account'}
             searchPlaceholder="Search products..."
+            userName={userName}
+            onCartClick={handleViewCart}
           />
         )}
 
