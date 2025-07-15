@@ -386,77 +386,146 @@ const AppInner: React.FC = () => {
   }
 if (authLoading) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center">
-      <div className="relative flex flex-col items-center">
-        <img
-          src={logo}
-          alt="7Days Hypermarket Logo"
-          className="w-32 h-32 md:w-40 md:h-40 object-contain mb-10 animate-logo-pop"
-          style={{ filter: 'drop-shadow(0 8px 32px rgba(20,184,166,0.25))' }}
-          draggable={false}
-        />
-        <div
-          className="premium-doors-text mb-2"
-          style={{
-            fontSize: '2.2rem',
-            fontWeight: 800,
-            letterSpacing: '0.08em',
-            background: 'linear-gradient(90deg, #14b8a6 0%, #f59e42 50%, #14b8a6 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            textShadow: '0 4px 24px rgba(20,184,166,0.18), 0 1.5px 0 #fff',
-            animation: 'fadeInUp 1.2s cubic-bezier(.68,-0.55,.27,1.55) both, shimmerText 2.5s infinite'
-          }}
-        >
-          Doors are opening...
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-center relative overflow-hidden">
+      {/* Animated background particles */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-teal-400 rounded-full opacity-30 animate-float-1"></div>
+        <div className="absolute top-1/3 right-1/4 w-1 h-1 bg-amber-400 rounded-full opacity-40 animate-float-2"></div>
+        <div className="absolute bottom-1/4 left-1/3 w-1.5 h-1.5 bg-teal-300 rounded-full opacity-25 animate-float-3"></div>
+      </div>
+
+      <div className="relative flex flex-col items-center z-10">
+        {/* Logo with enhanced visibility */}
+        <div className="relative mb-12">
+          {/* Logo glow background */}
+          <div className="absolute inset-0 bg-white rounded-2xl opacity-90 blur-md transform scale-110"></div>
+          <div className="relative bg-white rounded-xl p-6 shadow-2xl">
+            <img
+              src={logo}
+              alt="7Days Hypermarket Logo"
+              className="w-28 h-28 md:w-32 md:h-32 object-contain animate-logo-entrance"
+              draggable={false}
+            />
+          </div>
+          {/* Animated ring around logo */}
+          <div className="absolute inset-0 border-2 border-teal-400 rounded-xl opacity-50 animate-pulse-ring"></div>
         </div>
-        {/* Optional: Animated underline */}
-        <div className="w-24 h-1 rounded-full bg-gradient-to-r from-teal-400 via-amber-400 to-teal-400 opacity-80 animate-underline mt-1"></div>
-        {/* Sparkle Animation */}
-        <div className="absolute top-8 right-8 w-6 h-6 pointer-events-none animate-sparkle">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <g>
-              <circle cx="12" cy="12" r="6" fill="#14b8a6" opacity="0.3"/>
-              <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" stroke="#14b8a6" strokeWidth="2" strokeLinecap="round"/>
-            </g>
-          </svg>
+
+        {/* Premium "Opening" text */}
+        <div className="relative">
+          <h1 className="text-4xl md:text-5xl font-black text-white mb-4 animate-text-entrance"
+              style={{
+                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                letterSpacing: '0.05em',
+                textShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                background: 'linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
+              }}>
+            Opening
+          </h1>
+          
+          {/* Animated dots */}
+          <div className="flex justify-center space-x-1 mt-2">
+            <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-1"></div>
+            <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-2"></div>
+            <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-3"></div>
+          </div>
+        </div>
+
+        {/* Premium loading bar */}
+        <div className="mt-8 w-48 h-1 bg-gray-700 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-teal-400 via-amber-400 to-teal-400 rounded-full animate-loading-bar"></div>
         </div>
       </div>
+
       <style>{`
-        @keyframes logo-pop {
-          0% { transform: scale(0.7) rotate(-10deg); opacity: 0; }
-          60% { transform: scale(1.1) rotate(3deg); opacity: 1; }
-          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        @keyframes logo-entrance {
+          0% { 
+            transform: scale(0.3) rotateY(-180deg); 
+            opacity: 0; 
+          }
+          60% { 
+            transform: scale(1.1) rotateY(10deg); 
+            opacity: 1; 
+          }
+          100% { 
+            transform: scale(1) rotateY(0deg); 
+            opacity: 1; 
+          }
         }
-        @keyframes fadeInUp {
-          0% { opacity: 0; transform: translateY(30px);}
-          100% { opacity: 1; transform: translateY(0);}
+        .animate-logo-entrance {
+          animation: logo-entrance 1.5s cubic-bezier(.68,-0.55,.27,1.55) both;
         }
-        @keyframes shimmerText {
-          0% { filter: brightness(1);}
-          50% { filter: brightness(1.25);}
-          100% { filter: brightness(1);}
+
+        @keyframes text-entrance {
+          0% { 
+            opacity: 0; 
+            transform: translateY(30px) scale(0.9); 
+          }
+          100% { 
+            opacity: 1; 
+            transform: translateY(0) scale(1); 
+          }
         }
-        .animate-logo-pop {
-          animation: logo-pop 1.2s cubic-bezier(.68,-0.55,.27,1.55) both;
+        .animate-text-entrance {
+          animation: text-entrance 1.2s 0.8s cubic-bezier(.68,-0.55,.27,1.55) both;
         }
-        @keyframes sparkle {
-          0%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg);}
-          40% { opacity: 1; transform: scale(1.2) rotate(20deg);}
-          60% { opacity: 1; transform: scale(1) rotate(-10deg);}
-          80% { opacity: 0.7; transform: scale(0.8) rotate(0deg);}
+
+        @keyframes pulse-ring {
+          0%, 100% { 
+            transform: scale(1); 
+            opacity: 0.5; 
+          }
+          50% { 
+            transform: scale(1.05); 
+            opacity: 0.2; 
+          }
         }
-        .animate-sparkle {
-          animation: sparkle 2.2s infinite;
+        .animate-pulse-ring {
+          animation: pulse-ring 2s infinite;
         }
-        @keyframes underline {
-          0% { width: 0; opacity: 0; }
-          60% { width: 6rem; opacity: 1; }
-          100% { width: 6rem; opacity: 1; }
+
+        @keyframes dot-1 {
+          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+          40% { transform: scale(1); opacity: 1; }
         }
-        .animate-underline {
-          animation: underline 1.2s 0.5s cubic-bezier(.68,-0.55,.27,1.55) both;
+        @keyframes dot-2 {
+          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+          40% { transform: scale(1); opacity: 1; }
         }
+        @keyframes dot-3 {
+          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+          40% { transform: scale(1); opacity: 1; }
+        }
+        .animate-dot-1 { animation: dot-1 1.5s 0s infinite; }
+        .animate-dot-2 { animation: dot-2 1.5s 0.2s infinite; }
+        .animate-dot-3 { animation: dot-3 1.5s 0.4s infinite; }
+
+        @keyframes loading-bar {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(400%); }
+        }
+        .animate-loading-bar {
+          animation: loading-bar 2s infinite;
+        }
+
+        @keyframes float-1 {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-20px) rotate(180deg); }
+        }
+        @keyframes float-2 {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-15px) rotate(-180deg); }
+        }
+        @keyframes float-3 {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-25px) rotate(90deg); }
+        }
+        .animate-float-1 { animation: float-1 6s infinite; }
+        .animate-float-2 { animation: float-2 4s infinite; }
+        .animate-float-3 { animation: float-3 5s infinite; }
       `}</style>
     </div>
   );
