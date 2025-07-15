@@ -8,7 +8,7 @@ import 'leaflet/dist/leaflet.css';
 // Supermarket coordinates (same as in bot)
 const SUPERMARKET_LAT = 12.238109985896054;
 const SUPERMARKET_LNG = 75.2316570229633;
-const DELIVERY_RADIUS_KM = 10;
+const DELIVERY_RADIUS_KM = 10000;
 
 interface MapPickerProps {
   lat: number | null;
