@@ -49,7 +49,7 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
       name_en: 'Home & Lifestyle', 
       name_ml: 'ഹോമും ലൈഫ്സ്റ്റൈലും', 
       name_manglish: 'Home & Lifestyle',
-      image: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=200&h=200&fit=crop&crop=center',
+      image: 'https://media.theeverygirl.com/wp-content/uploads/2025/01/lifestyle-editor-home-aesthetic-update-the-everygirl-feature.jpg',
       description: 'Home decoration and lifestyle products',
       malayalamDescription: 'വീട് അലങ്കാരവും ജീവിതശൈലി ഉൽപ്പന്നങ്ങളും'
     },
@@ -58,7 +58,7 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
       name_en: 'Cleaners & Repellents', 
       name_ml: 'ക്ലീനറും കീടനാശിനികളും', 
       name_manglish: 'Cleaners & Repellents',
-      image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=200&h=200&fit=crop&crop=center',
+      image: 'https://img.freepik.com/free-photo/disinfection-equipment-table_23-2148577795.jpg',
       description: 'Cleaning products and pest repellents',
       malayalamDescription: 'വൃത്തിയാക്കൽ ഉൽപ്പന്നങ്ങളും കീടനാശിനികളും'
     },
@@ -67,7 +67,7 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
       name_en: 'Electronics', 
       name_ml: 'ഇലക്ട്രോണിക്സ്', 
       name_manglish: 'Electronics',
-      image: 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=200&h=200&fit=crop&crop=center',
+      image: 'https://t4.ftcdn.net/jpg/03/64/41/07/360_F_364410756_Ev3WoDfNyxO9c9n4tYIsU5YBQWAP3UF8.jpg',
       description: 'Electronic gadgets and appliances',
       malayalamDescription: 'ഇലക്ട്രോണിക് ഗാഡ്ജെറ്റുകളും ഉപകരണങ്ങളും'
     },
@@ -76,7 +76,7 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
       name_en: 'Stationery & Games', 
       name_ml: 'സ്റ്റേഷനറിയും ഗെയിമുകളും', 
       name_manglish: 'Stationery & Games',
-      image: 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?w=200&h=200&fit=crop&crop=center',
+      image: 'https://img.freepik.com/free-photo/back-school-concept-with-various-supplies_23-2149557517.jpg?semt=ais_hybrid&w=740',
       description: 'Stationery supplies and games',
       malayalamDescription: 'സ്റ്റേഷനറി സാധനങ്ങളും ഗെയിമുകളും'
     }
