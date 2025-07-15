@@ -384,15 +384,21 @@ const AppInner: React.FC = () => {
       </div>
     );
   }
-  if (authLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
-        <div className="bg-teal-100 border border-teal-300 rounded-lg p-6 text-teal-800 max-w-md">
-          <div className="text-2xl mb-2">🔍 Validating Session...</div>
-          <div>Please wait while we verify your access.</div>
-        </div>
+ if (authLoading) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
+      <div className="bg-teal-100 border border-teal-300 rounded-lg p-6 text-teal-800 max-w-md flex flex-col items-center">
+        <img
+          src="/Logo.png"
+          alt="7Days Hypermarket Logo"
+          className="w-32 h-32 object-contain mb-4"
+          draggable={false}
+        />
+        <div className="text-2xl mb-2 font-bold">Doors are opening...</div>
+        <div className="text-base text-teal-900">Hang tight! Your shopping adventure is about to begin 🛒✨</div>
       </div>
-    );
+    </div>
+  );
   }
   if (accessError) {
     return (
