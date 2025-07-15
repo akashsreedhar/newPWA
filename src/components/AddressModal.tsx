@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MapPicker from './MapPicker';
 
 export interface Address {
@@ -53,6 +53,11 @@ const AddressModal: React.FC<AddressModalProps> = ({
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [distanceError, setDistanceError] = useState('');
+
+  // Refs for inputs to scroll into view on focus (mobile UX)
+  const labelRef = useRef<HTMLInputElement>(null);
+  const detailsRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -179,13 +184,26 @@ const AddressModal: React.FC<AddressModalProps> = ({
     setDistanceError('');
   };
 
-
   if (!open) return null;
 
   // UI: List, Add, Edit
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70"
+      style={{
+        alignItems: window.innerWidth < 640 ? 'flex-start' : 'center',
+        overflowY: 'auto'
+      }}
+    >
+      <div
+        className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative"
+        style={{
+          marginTop: window.innerWidth < 640 ? 24 : 0,
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+          paddingBottom: 80
+        }}
+      >
         <div className="flex items-center justify-between mb-4">
           <button
             className="text-xs px-3 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200"
@@ -195,7 +213,7 @@ const AddressModal: React.FC<AddressModalProps> = ({
             Cancel
           </button>
           <h2 className="text-xl font-bold text-center flex-1">Manage Addresses</h2>
-          <div style={{width: 60}}></div>
+          <div style={{ width: 60 }}></div>
         </div>
         {mode === 'list' && (
           <div>
@@ -226,21 +244,27 @@ const AddressModal: React.FC<AddressModalProps> = ({
         {(mode === 'add' || mode === 'edit') && (
           <div className="space-y-2 mb-2">
             <input
+              ref={labelRef}
               className="w-full border rounded p-2 text-sm mb-1"
               placeholder="Label (e.g. Home, Work)"
               value={addressForm.label}
+              onFocus={() => labelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
               onChange={e => setAddressForm({ ...addressForm, label: e.target.value })}
             />
             <input
+              ref={detailsRef}
               className="w-full border rounded p-2 text-sm mb-1"
               placeholder="Full address details"
               value={addressForm.details}
+              onFocus={() => detailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
               onChange={e => setAddressForm({ ...addressForm, details: e.target.value })}
             />
             <input
+              ref={phoneRef}
               className="w-full border rounded p-2 text-sm mb-1"
               placeholder="Phone number"
               value={addressForm.phone}
+              onFocus={() => phoneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
               onChange={e => setAddressForm({ ...addressForm, phone: e.target.value })}
             />
             <MapPicker lat={addressForm.latitude} lng={addressForm.longitude} onChange={handleMapChange} />
