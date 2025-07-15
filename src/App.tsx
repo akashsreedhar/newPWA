@@ -384,49 +384,60 @@ const AppInner: React.FC = () => {
       </div>
     );
   }
- if (authLoading) {
+if (authLoading) {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center">
-      <img
-        src={logo}
-        alt="7Days Hypermarket Logo"
-        className="w-48 h-48 object-contain mb-8 animate-bounce-slow"
-        style={{ filter: 'drop-shadow(0 8px 32px rgba(20,184,166,0.25))' }}
-        draggable={false}
-      />
-      <div className="text-3xl font-extrabold text-white mb-2 animate-fade-in">
-        Hang tight!
+      <div className="relative flex flex-col items-center">
+        <img
+          src={logo}
+          alt="7Days Hypermarket Logo"
+          className="w-32 h-32 md:w-40 md:h-40 object-contain mb-10 animate-logo-pop"
+          style={{ filter: 'drop-shadow(0 8px 32px rgba(20,184,166,0.25))' }}
+          draggable={false}
+        />
+        <div className="text-2xl md:text-3xl font-extrabold text-white animate-gradient-text">
+          Doors are opening...
+        </div>
+        {/* Sparkle Animation */}
+        <div className="absolute top-8 right-8 w-6 h-6 pointer-events-none animate-sparkle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <g>
+              <circle cx="12" cy="12" r="6" fill="#14b8a6" opacity="0.3"/>
+              <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" stroke="#14b8a6" strokeWidth="2" strokeLinecap="round"/>
+            </g>
+          </svg>
+        </div>
       </div>
-      <div className="text-xl font-semibold text-teal-200 animate-shimmer">
-        Doors are opening...
-      </div>
-      {/* Animations */}
       <style>{`
-        @keyframes bounce-slow {
-          0%, 100% { transform: translateY(0);}
-          50% { transform: translateY(-24px);}
+        @keyframes logo-pop {
+          0% { transform: scale(0.7) rotate(-10deg); opacity: 0; }
+          60% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
         }
-        .animate-bounce-slow {
-          animation: bounce-slow 2s infinite;
+        .animate-logo-pop {
+          animation: logo-pop 1.2s cubic-bezier(.68,-0.55,.27,1.55) both;
         }
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(20px);}
-          to { opacity: 1; transform: translateY(0);}
+        @keyframes gradient-text {
+          0% { color: #14b8a6; }
+          50% { color: #f59e42; }
+          100% { color: #14b8a6; }
         }
-        .animate-fade-in {
-          animation: fade-in 1.2s cubic-bezier(.68,-0.55,.27,1.55) both;
+        .animate-gradient-text {
+          animation: gradient-text 2.5s infinite;
         }
-        @keyframes shimmer {
-          0% { opacity: 0.5; }
-          50% { opacity: 1; }
-          100% { opacity: 0.5; }
+        @keyframes sparkle {
+          0%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg);}
+          40% { opacity: 1; transform: scale(1.2) rotate(20deg);}
+          60% { opacity: 1; transform: scale(1) rotate(-10deg);}
+          80% { opacity: 0.7; transform: scale(0.8) rotate(0deg);}
         }
-        .animate-shimmer {
-          animation: shimmer 2s infinite;
+        .animate-sparkle {
+          animation: sparkle 2.2s infinite;
         }
       `}</style>
     </div>
   );
+
 
   }
   if (accessError) {
