@@ -395,9 +395,23 @@ if (authLoading) {
           style={{ filter: 'drop-shadow(0 8px 32px rgba(20,184,166,0.25))' }}
           draggable={false}
         />
-        <div className="text-2xl md:text-3xl font-extrabold text-white animate-gradient-text">
+        <div
+          className="premium-doors-text mb-2"
+          style={{
+            fontSize: '2.2rem',
+            fontWeight: 800,
+            letterSpacing: '0.08em',
+            background: 'linear-gradient(90deg, #14b8a6 0%, #f59e42 50%, #14b8a6 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            textShadow: '0 4px 24px rgba(20,184,166,0.18), 0 1.5px 0 #fff',
+            animation: 'fadeInUp 1.2s cubic-bezier(.68,-0.55,.27,1.55) both, shimmerText 2.5s infinite'
+          }}
+        >
           Doors are opening...
         </div>
+        {/* Optional: Animated underline */}
+        <div className="w-24 h-1 rounded-full bg-gradient-to-r from-teal-400 via-amber-400 to-teal-400 opacity-80 animate-underline mt-1"></div>
         {/* Sparkle Animation */}
         <div className="absolute top-8 right-8 w-6 h-6 pointer-events-none animate-sparkle">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -414,16 +428,17 @@ if (authLoading) {
           60% { transform: scale(1.1) rotate(3deg); opacity: 1; }
           100% { transform: scale(1) rotate(0deg); opacity: 1; }
         }
+        @keyframes fadeInUp {
+          0% { opacity: 0; transform: translateY(30px);}
+          100% { opacity: 1; transform: translateY(0);}
+        }
+        @keyframes shimmerText {
+          0% { filter: brightness(1);}
+          50% { filter: brightness(1.25);}
+          100% { filter: brightness(1);}
+        }
         .animate-logo-pop {
           animation: logo-pop 1.2s cubic-bezier(.68,-0.55,.27,1.55) both;
-        }
-        @keyframes gradient-text {
-          0% { color: #14b8a6; }
-          50% { color: #f59e42; }
-          100% { color: #14b8a6; }
-        }
-        .animate-gradient-text {
-          animation: gradient-text 2.5s infinite;
         }
         @keyframes sparkle {
           0%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg);}
@@ -434,12 +449,18 @@ if (authLoading) {
         .animate-sparkle {
           animation: sparkle 2.2s infinite;
         }
+        @keyframes underline {
+          0% { width: 0; opacity: 0; }
+          60% { width: 6rem; opacity: 1; }
+          100% { width: 6rem; opacity: 1; }
+        }
+        .animate-underline {
+          animation: underline 1.2s 0.5s cubic-bezier(.68,-0.55,.27,1.55) both;
+        }
       `}</style>
     </div>
   );
-
-
-  }
+}
   if (accessError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
