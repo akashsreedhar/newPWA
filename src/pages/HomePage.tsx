@@ -5,6 +5,11 @@ import { useProductLanguage } from '../hooks/useProductLanguage';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
+import groceryKitchenImg from '../images/grocery-kitchen.jpg';
+import snacksDrinksImg from '../images/snacks-drinks.png';
+import beautyCareImg from '../images/beauty-care.jpeg';
+import householdEssentialsImg from '../images/household-essentials.png';
+
 interface Product {
   id: string;
   name_en?: string;
@@ -110,7 +115,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       name: 'Grocery & Kitchen',
       malayalamName: 'അടുക്കള സാധനങ്ങൾ',
       manglishName: 'Adukala Sadhanangal',
-      imageUrl: 'https://sulabhmart.wordpress.com/wp-content/uploads/2013/07/1-composition-with-variety-of-grocery-products-t-monticello1.jpg',
+      imageUrl: groceryKitchenImg,
       gradient: 'from-green-500 to-emerald-600',
       bgColor: 'bg-green-50',
       subcategories: ['Fruits and Vegetables', 'Rice, Atta & Dal', 'Oil, Ghee & Masala', 'Dairy, Breads & Eggs', 'Chicken, Meat & Fish', 'Kitchenware & Appliances']
@@ -119,7 +124,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       name: 'Snacks & Drinks',
       malayalamName: 'ലഘുഭക്ഷണവും പാനീയങ്ങളും',
       manglishName: 'Snacks um Drinks um',
-      imageUrl: 'https://www.kindpng.com/picc/m/41-411184_snacks-and-drinks-png-transparent-png.png',
+      imageUrl: snacksDrinksImg,
       gradient: 'from-orange-500 to-red-500',
       bgColor: 'bg-orange-50',
       subcategories: ['Chips', 'Sweet Chocolates', 'Bakery and Biscuits', 'Drinks and Juices', 'Tea, Coffee & Milk Drinks', 'Instant Food']
@@ -130,7 +135,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       manglishName: 'Beauty & Personal Care',
       description: 'Soap, Shampoo & Cosmetics',
       malayalamDescription: 'സോപ്പ്, ഷാംപൂ, സൗന്ദര്യ സാധനങ്ങൾ',
-      imageUrl:  'https://media.licdn.com/dms/image/v2/D4D22AQH4myu_NZ-FeQ/feedshare-shrink_2048_1536/feedshare-shrink_2048_1536/0/1714028813199?e=2147483647&v=beta&t=SMR6bO8vQqzVs3qdSpbKFiPM9am3z7BQpGUSxKeul0g',
+      imageUrl:  beautyCareImg,
       gradient: 'from-pink-500 to-purple-600',
       bgColor: 'bg-pink-50',
       iconBg: 'bg-pink-100',
@@ -140,7 +145,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       name: 'Household Essentials',
       malayalamName: 'വീട്ടിലെ അത്യാവശ്യങ്ങൾ',
       manglishName: 'Veetile Athyavashyangal',
-      imageUrl: 'https://hips.hearstapps.com/hmg-prod/images/gettyimages-510693044-1550590816.jpg?crop=0.6667741935483871xw:1xh;center,top&resize=640:*',
+      imageUrl: householdEssentialsImg,
       gradient: 'from-blue-500 to-cyan-600',
       bgColor: 'bg-blue-50',
       subcategories: ['Home & Lifestyle', 'Cleaners & Repellents', 'Electronics', 'Stationery & Games']
