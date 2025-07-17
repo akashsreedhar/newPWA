@@ -3,12 +3,14 @@ import Confetti from 'react-confetti';
 import { useAddresses } from '../hooks/useAddresses';
 import AddressModal, { Address } from './AddressModal';
 import { useCart } from '../contexts/CartContext';
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
 
 interface OrderReviewModalProps {
   open: boolean;
   onClose: () => void;
   cartItems: any[];
-  onPlaceOrder: (order: { address: any; message: string; paymentMethod: 'cod' | 'online'; paymentData?: any }) => void;
+  onPlaceOrder: (order: { address: any; message: string; paymentMethod: 'cod' | 'online'; paymentData?: any; customerName?: string; customerPhone?: string }) => void;
   onClearCart?: () => void;
   onNavigateToOrders?: () => void;
   userId?: string | null;
@@ -16,6 +18,24 @@ interface OrderReviewModalProps {
   deliveryAllowed?: boolean;
   deliveryCheckPending?: boolean;
   loading?: boolean;
+}
+
+// Hook to fetch user data
+function useUser(userId?: string | null) {
+  const [user, setUser] = useState<{ name?: string; phone?: string } | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setUser(null);
+      return;
+    }
+    getDoc(doc(db, "users", String(userId))).then(snap => {
+      if (snap.exists()) setUser(snap.data() as any);
+      else setUser(null);
+    });
+  }, [userId]);
+
+  return user;
 }
 
 const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
@@ -31,6 +51,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   deliveryCheckPending = false,
   loading = false,
 }) => {
+  // Fetch user data using the custom hook
+  const user = useUser(userId);
+
   // Get the latest cart items directly from context as a backup
   const { cartItems: contextCartItems, removeFromCart, revalidateCartAvailability } = useCart();
 
@@ -248,7 +271,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       const orderData = await orderResponse.json();
 
       const options = {
-        key: 'rzp_live_fI0F8IVzgfDwNs',
+        key: 'rzp_test_zkGVsDujuT26zg', // test key
         amount: orderData.amount,
         currency: orderData.currency,
         name: 'SuperMarket',
@@ -331,6 +354,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   address: selectedAddress,
                   message,
                   paymentMethod: 'online',
+                  customerName: user?.name,
+                  customerPhone: user?.phone,
                   paymentData: {
                     razorpayOrderId: response.razorpay_order_id,
                     razorpayPaymentId: response.razorpay_payment_id,
@@ -445,7 +470,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               onPlaceOrder({
                 address: selectedAddress,
                 message,
-                paymentMethod: 'cod'
+                paymentMethod: 'cod',
+                customerName: user?.name,
+                customerPhone: user?.phone,
               });
             }
           }
