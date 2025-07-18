@@ -1,5 +1,3 @@
-
-
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -8,7 +6,7 @@ import 'leaflet/dist/leaflet.css';
 // Supermarket coordinates (same as in bot)
 const SUPERMARKET_LAT = 12.238109985896054;
 const SUPERMARKET_LNG = 75.2316570229633;
-const DELIVERY_RADIUS_KM = 10000;
+const DELIVERY_RADIUS_KM = 100;
 
 interface MapPickerProps {
   lat: number | null;
@@ -51,11 +49,11 @@ const LocationMarker: React.FC<{
   return null;
 };
 
-
 const MapPicker: React.FC<MapPickerProps> = ({ lat, lng, onChange }) => {
   const [currentLat, setCurrentLat] = useState(lat || SUPERMARKET_LAT);
   const [currentLng, setCurrentLng] = useState(lng || SUPERMARKET_LNG);
   const [distanceError, setDistanceError] = useState('');
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     if (lat && lng) {
@@ -88,15 +86,18 @@ const MapPicker: React.FC<MapPickerProps> = ({ lat, lng, onChange }) => {
 
   const handleUseCurrentLocation = () => {
     if (navigator.geolocation) {
+      setLocating(true);
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setCurrentLat(position.coords.latitude);
           setCurrentLng(position.coords.longitude);
           onChange(position.coords.latitude, position.coords.longitude);
           verifyDeliveryRadius(position.coords.latitude, position.coords.longitude);
+          setLocating(false);
         },
         () => {
           setDistanceError('Unable to get your location.');
+          setLocating(false);
         }
       );
     } else {
@@ -132,11 +133,50 @@ const MapPicker: React.FC<MapPickerProps> = ({ lat, lng, onChange }) => {
           <LocationMarker onChange={onChange} />
         </MapContainer>
       </div>
-      <button className="bg-teal-600 text-white px-2 py-1 rounded text-xs mb-2" onClick={handleUseCurrentLocation}>
-        Use My Location
+      <button
+        className="bg-teal-600 text-white px-2 py-1 rounded text-xs mb-2 flex items-center justify-center"
+        onClick={handleUseCurrentLocation}
+        disabled={locating}
+        style={{ minWidth: 120 }}
+      >
+        {locating ? (
+          <>
+            <span className="mr-2">
+              <svg
+                className="animate-spin"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                style={{ display: 'inline', verticalAlign: 'middle' }}
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="white"
+                  strokeWidth="4"
+                  fill="none"
+                />
+                <path
+                  className="opacity-75"
+                  fill="white"
+                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                />
+              </svg>
+            </span>
+            Locating...
+          </>
+        ) : (
+          "Use My Location"
+        )}
       </button>
       {distanceError && <div className="text-xs text-red-500">{distanceError}</div>}
-      <div className="text-xs text-gray-500">Tap the map or drag the marker to set your delivery location. Delivery available within {DELIVERY_RADIUS_KM}km of the supermarket.</div>
+      <div className="text-xs text-gray-500">
+        Tap the map or drag the marker to set your delivery location. Delivery available within {DELIVERY_RADIUS_KM}km of the supermarket.
+      </div>
     </div>
   );
 };

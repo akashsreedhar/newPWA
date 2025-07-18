@@ -27,7 +27,7 @@ interface AddressModalProps {
 
 const SUPERMARKET_LAT = 12.238109985896054;
 const SUPERMARKET_LNG = 75.2316570229633;
-const DELIVERY_RADIUS_KM = 1000;
+const DELIVERY_RADIUS_KM = 100;
 
 const AddressModal: React.FC<AddressModalProps> = ({
   open,
