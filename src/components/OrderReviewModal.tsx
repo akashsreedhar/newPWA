@@ -815,7 +815,12 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             gravity={0.2}
             initialVelocityY={20}
             initialVelocityX={8}
-            colors={['#14b8a6', '#06b6d4', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#ef4444']}
+           colors={[
+        '#00ffe1ff', '#01d9ffff', '#10b981', '#0560f3ff', '#5005ffff', '#f30a7eff', '#fca002ff', '#ef4444',
+        '#f60d34ff', '#fbbf24', '#fde68a', '#a3e635', '#22d3ee', '#e11d48', '#f472b6', '#facc15',
+        '#4ade80', '#38bdf8', '#6366f1', '#d508f5ff', '#f87171', '#f7be03ff', '#a3ff04ff', '#05f5d1ff',
+        '#818cf8', '#f1067fff', '#ec7171ff', '#fadd04ff', '#04f85aff', '#022bf6ff', '#f9a8d4', '#fb0606ff'
+      ]}
           />
         </div>
       )}
