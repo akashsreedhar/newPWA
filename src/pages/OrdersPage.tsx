@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { useAddresses } from '../hooks/useAddresses';
 import { db } from '../firebase.ts';
-import { collection, query, where, orderBy, onSnapshot, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 
 interface OrdersPageProps {
   userId?: string | null;
@@ -248,17 +248,18 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         await updateDoc(orderRef, {
           status: 'accepted',
           customerResponse: 'accepted',
-          customerResponseAt: new Date()
+          customerResponseAt: serverTimestamp()
         });
       } else {
         await updateDoc(orderRef, {
           status: 'cancelled',
           customerResponse: 'cancelled',
-          customerResponseAt: new Date()
+          customerResponseAt: serverTimestamp()
         });
       }
     } catch (err) {
-      // Optionally show error
+      console.error("Order update failed:", err); // <-- Add this
+    alert("Failed to update order. Please try again.");
     } finally {
       setActionLoading(null);
     }
