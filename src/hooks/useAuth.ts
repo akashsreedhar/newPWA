@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { signInWithCustomToken, signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 
 // Types
 interface LastLocation {
@@ -46,6 +48,18 @@ export function useAuth(fingerprint: string | null): AuthReturn {
   // Debounce/lock: Only allow one authentication at a time
   const isAuthenticating = useRef(false);
 
+  // 🔥 NEW: Function to sign in with Firebase custom token
+  const signInWithFirebaseCustomToken = async (customToken: string) => {
+    try {
+      const userCredential = await signInWithCustomToken(auth, customToken);
+      console.log('✅ Firebase Auth successful:', userCredential.user.uid);
+      return true;
+    } catch (error: any) {
+      console.error('❌ Firebase Auth failed:', error);
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (!fingerprint) {
       setLoading(true);
@@ -75,6 +89,20 @@ export function useAuth(fingerprint: string | null): AuthReturn {
         setAccessError("");
         setLoading(false);
         isAuthenticating.current = false;
+        
+        // 🔥 NEW: Sign in mock user to Firebase Auth in dev mode
+        try {
+          // In dev mode, we skip Firebase Auth as we don't have a custom token
+          // But we could sign out any existing user to avoid conflicts
+          if (auth.currentUser) {
+            console.log('🔍 DEV MODE: Signing out existing Firebase user for clean state');
+            await signOut(auth);
+          }
+          console.log('🔍 DEV MODE: Firebase Auth state cleared for dev user');
+        } catch (error) {
+          console.warn('⚠️ DEV MODE: Firebase Auth setup issue:', error);
+        }
+        
         return;
       }
 
@@ -113,6 +141,19 @@ export function useAuth(fingerprint: string | null): AuthReturn {
                 });
               }
               setAccessError("");
+              
+              // 🔥 NEW: Sign in to Firebase Auth with custom token
+              if (data.firebaseCustomToken) {
+                const firebaseSuccess = await signInWithFirebaseCustomToken(data.firebaseCustomToken);
+                if (firebaseSuccess) {
+                  console.log('✅ Dual authentication successful (Telegram + Firebase)');
+                } else {
+                  console.warn('⚠️ Custom auth successful but Firebase Auth failed');
+                }
+              } else {
+                console.warn('⚠️ No Firebase custom token received from backend');
+              }
+              
               setLoading(false);
               return;
             } else {
@@ -212,6 +253,19 @@ export function useAuth(fingerprint: string | null): AuthReturn {
           setAccessError("");
           // Store refresh token if provided
           if (data.refreshToken) setRefreshToken(data.refreshToken);
+          
+          // 🔥 NEW: Sign in to Firebase Auth with custom token
+          if (data.firebaseCustomToken) {
+            const firebaseSuccess = await signInWithFirebaseCustomToken(data.firebaseCustomToken);
+            if (firebaseSuccess) {
+              console.log('✅ Dual authentication successful (Token + Firebase)');
+            } else {
+              console.warn('⚠️ Custom auth successful but Firebase Auth failed');
+            }
+          } else {
+            console.warn('⚠️ No Firebase custom token received from backend');
+          }
+          
         } else {
           setUserId(null);
           setAccessError("❌ Invalid or expired session. Please use the Telegram bot to get a new access link.");
