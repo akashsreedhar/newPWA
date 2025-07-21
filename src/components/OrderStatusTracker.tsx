@@ -1,7 +1,5 @@
 import React from "react";
-import { CheckCircle, Clock } from "lucide-react";
-
-
+import { CheckCircle, Clock, AlertTriangle, XCircle } from "lucide-react";
 
 // Show all statuses to customer (including 'pending')
 const STATUS_STEPS = [
@@ -20,7 +18,6 @@ function getCurrentStep(status: StatusKey | string): number {
   return idx === -1 ? 0 : idx;
 }
 
-
 interface StatusHistoryEntry {
   status: StatusKey | string;
   timestamp: { seconds: number; nanoseconds?: number };
@@ -30,8 +27,6 @@ interface OrderStatusTrackerProps {
   status: StatusKey | string;
   statusHistory?: StatusHistoryEntry[];
 }
-
-
 
 export const OrderStatusTracker: React.FC<OrderStatusTrackerProps> = ({ status, statusHistory }) => {
   // Map statusHistory to a lookup for timestamps, only for customer-visible statuses
@@ -47,10 +42,17 @@ export const OrderStatusTracker: React.FC<OrderStatusTrackerProps> = ({ status, 
   }
 
   // Treat both 'delivered' and 'completed' as delivered for customer
+  // Add support for pending_customer_action and cancelled
   let effectiveStatus: StatusKey;
+  let specialStatus: "pending_customer_action" | "cancelled" | null = null;
   if (status === 'completed' || status === 'payment_pending') {
-    // Treat both as delivered for customer
     effectiveStatus = 'delivered';
+  } else if (status === 'pending_customer_action') {
+    effectiveStatus = lastVisibleStatus;
+    specialStatus = "pending_customer_action";
+  } else if (status === 'cancelled') {
+    effectiveStatus = lastVisibleStatus;
+    specialStatus = "cancelled";
   } else if (statusOrder.includes(status)) {
     effectiveStatus = status as StatusKey;
   } else {
@@ -80,6 +82,20 @@ export const OrderStatusTracker: React.FC<OrderStatusTrackerProps> = ({ status, 
     out_for_delivery: "Your order is on the way! Our delivery agent will reach you soon.",
     delivered: "Order delivered! Thank you for shopping with us.",
     pending: "We are reviewing your order. Please wait for confirmation.", // not shown
+  };
+
+  // Special notes for out-of-stock and cancelled
+  const specialStatusNotes: Record<string, { icon: React.ReactNode; text: string; color: string }> = {
+    pending_customer_action: {
+      icon: <AlertTriangle className="inline mr-1 text-yellow-500" size={18} />,
+      text: "Some items are out of stock. Please review and accept/cancel.",
+      color: "text-yellow-800 bg-yellow-50"
+    },
+    cancelled: {
+      icon: <XCircle className="inline mr-1 text-red-500" size={18} />,
+      text: "Order cancelled.",
+      color: "text-red-800 bg-red-50"
+    }
   };
 
   return (
@@ -119,9 +135,16 @@ export const OrderStatusTracker: React.FC<OrderStatusTrackerProps> = ({ status, 
         })}
       </div>
       <div className="w-full text-center mt-2 mb-1">
-        <span className="inline-block text-sm sm:text-base font-medium text-teal-700 bg-teal-50 rounded-lg px-3 py-2 shadow-sm">
-          {statusNotes[effectiveStatus as StatusKey]}
-        </span>
+        {specialStatus ? (
+          <span className={`inline-block text-sm sm:text-base font-medium rounded-lg px-3 py-2 shadow-sm ${specialStatusNotes[specialStatus].color}`}>
+            {specialStatusNotes[specialStatus].icon}
+            {specialStatusNotes[specialStatus].text}
+          </span>
+        ) : (
+          <span className="inline-block text-sm sm:text-base font-medium text-teal-700 bg-teal-50 rounded-lg px-3 py-2 shadow-sm">
+            {statusNotes[effectiveStatus as StatusKey]}
+          </span>
+        )}
       </div>
     </>
   );
