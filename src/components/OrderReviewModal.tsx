@@ -504,6 +504,23 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     }
   };
 
+  // --- Telegram back button integration for modal ---
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || typeof tg.onEvent !== 'function') return;
+    if (!open) return;
+
+    const handleTelegramBack = () => {
+      if (onClose) onClose();
+    };
+
+    tg.onEvent('backButtonClicked', handleTelegramBack);
+
+    return () => {
+      tg.offEvent('backButtonClicked', handleTelegramBack);
+    };
+  }, [open, onClose]);
+
   return (
     <>
       <AddressModal

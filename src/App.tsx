@@ -60,6 +60,8 @@ function setLastDeliveryCheck(userId: string, result: any) {
   );
 }
 
+const MAIN_PAGES = ['home', 'cart', 'orders', 'account'];
+
 const AppInner: React.FC = () => {
   const [tab, setTab] = useState('home');
   const [fingerprint, setFingerprint] = useState<string | null>(null);
@@ -73,7 +75,7 @@ const AppInner: React.FC = () => {
   const [userName, setUserName] = useState<string | null>(null);
 
   // Navigation state for pages
-  const [currentPage, setCurrentPage] = useState<'home' | 'search' | 'category' | 'dedicated-category'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'search' | 'category' | 'dedicated-category' | 'cart' | 'orders' | 'account'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [navigationStack, setNavigationStack] = useState<string[]>(['home']); // Track navigation history
@@ -121,6 +123,7 @@ const AppInner: React.FC = () => {
 
   const handleBackToHome = () => {
     setCurrentPage('home');
+    setTab('home');
     setSearchQuery('');
     setSelectedCategory('');
     setNavigationStack(['home']);
@@ -137,9 +140,11 @@ const AppInner: React.FC = () => {
     setNavigationStack(newStack);
 
     const previousPage = newStack[newStack.length - 1];
-    if (previousPage === 'home') {
-      setCurrentPage('home');
+    if (MAIN_PAGES.includes(previousPage)) {
+      setCurrentPage(previousPage as typeof currentPage);
+      setTab(previousPage);
       setSelectedCategory('');
+      setSearchQuery('');
     } else if (previousPage === 'search') {
       setCurrentPage('search');
     } else if (previousPage.startsWith('dedicated-category:')) {
@@ -164,15 +169,19 @@ const AppInner: React.FC = () => {
 
   const handleTabChange = (newTab: string) => {
     setTab(newTab);
-    setCurrentPage('home');
-    setNavigationStack(['home']);
+    setCurrentPage(newTab as typeof currentPage);
+    setSearchQuery('');
+    setSelectedCategory('');
+    setNavigationStack(prev => [...prev, newTab]);
     window.scrollTo(0, 0);
   };
 
   const handleViewCart = () => {
     setTab('cart');
-    setCurrentPage('home');
-    setNavigationStack(['home']);
+    setCurrentPage('cart');
+    setSearchQuery('');
+    setSelectedCategory('');
+    setNavigationStack(prev => [...prev, 'cart']);
     window.scrollTo(0, 0);
   };
 
@@ -356,18 +365,15 @@ const AppInner: React.FC = () => {
   const disableOrderReview = (authLoading && !userId) || (!isUserRegistered && !isLocalhost && !devMode);
 
   // --- Native-like navigation integration ---
-  // Track if we are pushing state to avoid duplicate push
   const isPushingState = useRef(false);
 
   useEffect(() => {
-    // Push initial state if not present
     if (window.history.state === null) {
       window.history.replaceState({ page: currentPage, tab }, '');
     }
   }, []);
 
   useEffect(() => {
-    // Only push state if not home
     if (currentPage !== 'home' && !isPushingState.current) {
       window.history.pushState({ page: currentPage, tab }, '');
       isPushingState.current = true;
@@ -377,14 +383,12 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // If on home, allow default (WebApp closes/minimizes)
-      if (currentPage === 'home') {
+      if (navigationStack.length <= 1) {
+        // Only root left, allow Telegram to minimize/close
         return;
       }
-      // On other pages, prevent closing and navigate back in app
       e.preventDefault?.();
       handleSmartBack();
-      // Push state again to prevent leaving WebApp
       window.history.pushState({ page: currentPage, tab }, '');
     };
     window.addEventListener('popstate', onPopState);
@@ -394,12 +398,11 @@ const AppInner: React.FC = () => {
     // eslint-disable-next-line
   }, [currentPage, tab, navigationStack]);
 
-  // Telegram WebApp BackButton integration (header button)
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
-    if (currentPage === 'home') {
+    if (navigationStack.length <= 1) {
       tg.BackButton.hide();
     } else {
       tg.BackButton.show();
@@ -410,19 +413,17 @@ const AppInner: React.FC = () => {
         tg.BackButton.offClick(handleSmartBack);
       }
     };
-  }, [currentPage]);
+  }, [navigationStack.length]);
 
-  // Telegram hardware back button integration (native-like)
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
 
     const handleTelegramBack = () => {
-      if (currentPage === 'home') {
-        // On home, allow Telegram to minimize/close the app
+      if (navigationStack.length <= 1) {
+        // Only root left, allow Telegram to minimize/close the app
         // Optionally: tg.close();
       } else {
-        // On other pages, navigate back in your app
         handleSmartBack();
       }
     };
@@ -432,7 +433,7 @@ const AppInner: React.FC = () => {
     return () => {
       tg.offEvent('backButtonClicked', handleTelegramBack);
     };
-  }, [currentPage, navigationStack]);
+  }, [navigationStack.length]);
 
   // --- UI rendering ---
   if (tgAccessError) {
@@ -662,13 +663,12 @@ const AppInner: React.FC = () => {
       {/* Main content */}
       <div className="pt-2">
         {/* Global Header - only show on main tab pages, not on search/category overlay */}
-        {(tab === 'home' || tab === 'cart' || tab === 'orders' || tab === 'account') && 
-         currentPage === 'home' && (
+        {MAIN_PAGES.includes(currentPage) && (
           <GlobalHeader 
             onSearchFocus={handleSearchFocus}
             showBackButton={false}
-            title={tab === 'home' ? '' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-            showSearch={tab !== 'account'}
+            title={currentPage === 'home' ? '' : currentPage.charAt(0).toUpperCase() + currentPage.slice(1)}
+            showSearch={currentPage !== 'account'}
             searchPlaceholder="Search products..."
             userName={userName}
             onCartClick={handleViewCart}
@@ -677,29 +677,25 @@ const AppInner: React.FC = () => {
 
         {/* Page Content based on currentPage */}
         {currentPage === 'home' && (
-          <>
-            {tab === 'home' && (
-              <HomePage 
-                onCategorySelect={handleCategorySelect}
-              />
-            )}
-            {tab === 'cart' && (
-              <CartPage
-                userId={userId}
-                disableOrderReview={disableOrderReview}
-                deliveryAllowed={deliveryAllowed}
-                deliveryCheckPending={deliveryCheckPending}
-                onOrderPlaced={handleOrderPlaced}
-                onNavigateToOrders={() => setTab('orders')}
-              />
-            )}
-            {tab === 'orders' && (
-              <OrdersPage userId={userId} onNavigateToCart={() => setTab('cart')} />
-            )}
-            {tab === 'account' && (
-              <AccountPage userId={userId} />
-            )}
-          </>
+          <HomePage 
+            onCategorySelect={handleCategorySelect}
+          />
+        )}
+        {currentPage === 'cart' && (
+          <CartPage
+            userId={userId}
+            disableOrderReview={disableOrderReview}
+            deliveryAllowed={deliveryAllowed}
+            deliveryCheckPending={deliveryCheckPending}
+            onOrderPlaced={handleOrderPlaced}
+            onNavigateToOrders={() => setTab('orders')}
+          />
+        )}
+        {currentPage === 'orders' && (
+          <OrdersPage userId={userId} onNavigateToCart={() => setTab('cart')} />
+        )}
+        {currentPage === 'account' && (
+          <AccountPage userId={userId} />
         )}
 
         {/* Search Page Overlay */}
@@ -753,7 +749,7 @@ const AppInner: React.FC = () => {
       </div>
       
       {/* Bottom Navigation - only show when not in overlay mode */}
-      {currentPage === 'home' && (
+      {MAIN_PAGES.includes(currentPage) && (
         <BottomNavigation activeTab={tab} onTabChange={handleTabChange} cartCount={cartItems.length} />
       )}
 
