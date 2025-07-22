@@ -117,7 +117,6 @@ const AppInner: React.FC = () => {
   const handleSearchFocus = () => {
     setCurrentPage('search');
     setNavigationStack(prev => [...prev, 'search']);
-    window.history.pushState({ page: 'search' }, '', '');
   };
 
   const handleBackToHome = () => {
@@ -126,7 +125,6 @@ const AppInner: React.FC = () => {
     setSelectedCategory('');
     setNavigationStack(['home']);
     window.scrollTo(0, 0);
-    // Don't push state for home, so back closes/minimizes the app
   };
 
   const handleSmartBack = () => {
@@ -162,7 +160,6 @@ const AppInner: React.FC = () => {
     const newPage = mainCategories.includes(category) ? 'dedicated-category' : 'category';
     setCurrentPage(newPage);
     setNavigationStack(prev => [...prev, `${newPage}:${category}`]);
-    window.history.pushState({ page: `${newPage}:${category}` }, '', '');
   };
 
   const handleTabChange = (newTab: string) => {
@@ -170,7 +167,6 @@ const AppInner: React.FC = () => {
     setCurrentPage('home');
     setNavigationStack(['home']);
     window.scrollTo(0, 0);
-    // Don't push state for home, so back closes/minimizes the app
   };
 
   const handleViewCart = () => {
@@ -178,7 +174,6 @@ const AppInner: React.FC = () => {
     setCurrentPage('home');
     setNavigationStack(['home']);
     window.scrollTo(0, 0);
-    // Don't push state for home, so back closes/minimizes the app
   };
 
   const handleOrderPlaced = (success: boolean, message: string) => {
@@ -364,23 +359,26 @@ const AppInner: React.FC = () => {
   // Track if we are pushing state to avoid duplicate push
   const isPushingState = useRef(false);
 
-  // Push initial state if not present
   useEffect(() => {
+    // Push initial state if not present
     if (window.history.state === null) {
       window.history.replaceState({ page: currentPage, tab }, '');
     }
   }, []);
 
-  // Listen for popstate (browser/system back)
+  useEffect(() => {
+    // Only push state if not home
+    if (currentPage !== 'home' && !isPushingState.current) {
+      window.history.pushState({ page: currentPage, tab }, '');
+      isPushingState.current = true;
+      setTimeout(() => { isPushingState.current = false; }, 100);
+    }
+  }, [currentPage, tab, navigationStack]);
+
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
       // If on home, allow default (WebApp closes/minimizes)
-      if (navigationStack.length <= 1) {
-        setCurrentPage('home');
-        setNavigationStack(['home']);
-        // Hide Telegram BackButton
-        const tg = (window as any).Telegram?.WebApp;
-        if (tg && tg.BackButton) tg.BackButton.hide();
+      if (currentPage === 'home') {
         return;
       }
       // On other pages, prevent closing and navigate back in app
@@ -396,7 +394,7 @@ const AppInner: React.FC = () => {
     // eslint-disable-next-line
   }, [currentPage, tab, navigationStack]);
 
-  // Telegram WebApp BackButton integration
+  // Telegram WebApp BackButton integration (header button)
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
@@ -413,6 +411,28 @@ const AppInner: React.FC = () => {
       }
     };
   }, [currentPage]);
+
+  // Telegram hardware back button integration (native-like)
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || typeof tg.onEvent !== 'function') return;
+
+    const handleTelegramBack = () => {
+      if (currentPage === 'home') {
+        // On home, allow Telegram to minimize/close the app
+        // Optionally: tg.close();
+      } else {
+        // On other pages, navigate back in your app
+        handleSmartBack();
+      }
+    };
+
+    tg.onEvent('backButtonClicked', handleTelegramBack);
+
+    return () => {
+      tg.offEvent('backButtonClicked', handleTelegramBack);
+    };
+  }, [currentPage, navigationStack]);
 
   // --- UI rendering ---
   if (tgAccessError) {
@@ -775,4 +795,3 @@ const AppWithAnimation: React.FC = () => {
 };
 
 export default App;
-
