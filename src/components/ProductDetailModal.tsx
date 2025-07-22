@@ -68,6 +68,23 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
     };
   }, [isOpen, product?.id]); // Only depend on product ID, not the entire product object
 
+  // --- Telegram back button integration for modal ---
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || typeof tg.onEvent !== 'function') return;
+    if (!isOpen) return;
+
+    const handleTelegramBack = () => {
+      if (onClose) onClose();
+    };
+
+    tg.onEvent('backButtonClicked', handleTelegramBack);
+
+    return () => {
+      tg.offEvent('backButtonClicked', handleTelegramBack);
+    };
+  }, [isOpen, onClose]);
+
   // Fetch similar products
   const fetchSimilarProducts = async () => {
     if (!product) return;

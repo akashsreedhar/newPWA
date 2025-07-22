@@ -371,9 +371,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               confettiTimeout.current = setTimeout(() => {
                 setStep('checkmark');
                 checkmarkTimeout.current = setTimeout(() => {
-                  if (onClearCart) onClearCart();
-                  if (onNavigateToOrders) onNavigateToOrders();
-                  if (onClose) onClose();
+                 if (onNavigateToOrders) onNavigateToOrders();
+  if (onClearCart) onClearCart();
+  if (onClose) onClose();
 
                   redirectTimeout.current = setTimeout(() => {
                     setStep('idle');
@@ -482,10 +482,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             confettiTimeout.current = setTimeout(() => {
               setStep('checkmark');
               checkmarkTimeout.current = setTimeout(() => {
-                if (onClearCart) onClearCart();
-                if (onNavigateToOrders) onNavigateToOrders();
-                if (onClose) onClose();
-
+               if (onNavigateToOrders) onNavigateToOrders();
+  if (onClearCart) onClearCart();
+  if (onClose) onClose();
                 redirectTimeout.current = setTimeout(() => {
                   setStep('idle');
                   setOrderPlaced(false);
