@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { CartProvider, useCart } from './contexts/CartContext';
 import { CartAnimationProvider, useCartAnimation } from './contexts/CartAnimationContext';
@@ -95,21 +95,7 @@ const AppInner: React.FC = () => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const devMode = import.meta.env.VITE_DEV_MODE === 'true' || import.meta.env.MODE !== 'production';
     
-    console.log('🔍 Telegram access check:', {
-      isLocalhost,
-      VITE_DEV_MODE: import.meta.env.VITE_DEV_MODE,
-      MODE: import.meta.env.MODE,
-      devMode,
-      hostname: window.location.hostname,
-      hasWindow: !!window,
-      hasTelegram: !!(window as any).Telegram,
-      hasWebApp: !!((window as any).Telegram && (window as any).Telegram.WebApp),
-      hasInitData: !!((window as any).Telegram && (window as any).Telegram.WebApp && (window as any).Telegram.WebApp.initData),
-      initDataLength: (window as any).Telegram && (window as any).Telegram.WebApp && (window as any).Telegram.WebApp.initData ? (window as any).Telegram.WebApp.initData.length : 0
-    });
-    
     if (isLocalhost || devMode) {
-      console.log('✅ Dev mode detected, bypassing Telegram restriction');
       setTgAccessError("");
       return;
     }
@@ -119,12 +105,10 @@ const AppInner: React.FC = () => {
       !(window as any).Telegram.WebApp.initData ||
       (window as any).Telegram.WebApp.initData.length < 10
     ) {
-      console.log('❌ Telegram access check failed');
       setTgAccessError(
         "❌ This app can only be used inside Telegram. Please open it from the bot."
       );
     } else {
-      console.log('✅ Telegram access check passed');
       setTgAccessError("");
     }
   }, []);
@@ -132,41 +116,32 @@ const AppInner: React.FC = () => {
   // Navigation handlers
   const handleSearchFocus = () => {
     setCurrentPage('search');
+    setNavigationStack(prev => [...prev, 'search']);
   };
-
-  // Future: Handler for programmatic search with query
-  // const handleSearch = (query: string) => {
-  //   setSearchQuery(query);
-  //   setCurrentPage('search');
-  // };
 
   const handleBackToHome = () => {
     setCurrentPage('home');
     setSearchQuery('');
     setSelectedCategory('');
     setNavigationStack(['home']);
-    // Scroll to top when returning to home
     window.scrollTo(0, 0);
   };
 
   const handleSmartBack = () => {
     if (navigationStack.length <= 1) {
-      // Already at home or only one item in stack
       handleBackToHome();
       return;
     }
-
-    // Remove current page from stack
     const newStack = [...navigationStack];
     newStack.pop();
     setNavigationStack(newStack);
 
-    // Get previous page info
     const previousPage = newStack[newStack.length - 1];
-    
     if (previousPage === 'home') {
       setCurrentPage('home');
       setSelectedCategory('');
+    } else if (previousPage === 'search') {
+      setCurrentPage('search');
     } else if (previousPage.startsWith('dedicated-category:')) {
       const category = previousPage.replace('dedicated-category:', '');
       setCurrentPage('dedicated-category');
@@ -176,38 +151,31 @@ const AppInner: React.FC = () => {
       setCurrentPage('category');
       setSelectedCategory(category);
     }
-
-    // Scroll to top when navigating back
     window.scrollTo(0, 0);
   };
 
   const handleCategorySelect = (category: string) => {
     setSelectedCategory(category);
-    // Check if this is a main category that has a dedicated page
     const mainCategories = ['Grocery & Kitchen', 'Snacks & Drinks', 'Beauty & Personal Care', 'Household Essentials'];
     const newPage = mainCategories.includes(category) ? 'dedicated-category' : 'category';
-    
     setCurrentPage(newPage);
-    
-    // Update navigation stack
     setNavigationStack(prev => [...prev, `${newPage}:${category}`]);
   };
 
-  // Tab change handler with scroll to top
   const handleTabChange = (newTab: string) => {
     setTab(newTab);
-    // Scroll to top when changing tabs
+    setCurrentPage('home');
+    setNavigationStack(['home']);
     window.scrollTo(0, 0);
   };
 
-  // Handler to view cart (from persistent button)
   const handleViewCart = () => {
     setTab('cart');
     setCurrentPage('home');
+    setNavigationStack(['home']);
     window.scrollTo(0, 0);
   };
 
-  // Order feedback handlers
   const handleOrderPlaced = (success: boolean, message: string) => {
     if (success) {
       setOrderSuccess(message);
@@ -222,7 +190,6 @@ const AppInner: React.FC = () => {
 
   // --- Auth ---
   const { userId, accessError, loading: authLoading } = useAuth(fingerprint);
-  console.log('App.tsx userId:', userId, 'accessError:', accessError, 'authLoading:', authLoading);
 
   // Fetch user name when userId changes
   useEffect(() => {
@@ -245,12 +212,8 @@ const AppInner: React.FC = () => {
     })();
   }, [userId]);
 
-  // --- Cart ---
-  // We'll use the context in the page components
-
   // --- Delivery area check logic ---
   useEffect(() => {
-    // Bypass delivery area check in dev mode
     if (import.meta.env.VITE_DEV_MODE === 'true') {
       setDeliveryAllowed(true);
       setDeliveryMessage('');
@@ -267,7 +230,6 @@ const AppInner: React.FC = () => {
       return;
     }
     setDeliveryCheckPending(true);
-    // Try Telegram LocationManager first
     const tg = (window as any).Telegram && (window as any).Telegram.WebApp;
     if (tg && tg.LocationManager && typeof tg.LocationManager.init === "function") {
       (async () => {
@@ -279,7 +241,6 @@ const AppInner: React.FC = () => {
             );
             if (!error && locationData && locationData.latitude && locationData.longitude) {
               try {
-                // Use Vite env for backend URL, fallback to production if not set
                 const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://supermarket-backend-ytrh.onrender.com";
                 const response = await fetch(
                   `${backendUrl}/verify-location`,
@@ -335,7 +296,6 @@ const AppInner: React.FC = () => {
               `Browser geolocation success: lat=${position.coords.latitude}, lng=${position.coords.longitude}`
             );
             try {
-              // Use Vite env for backend URL, fallback to production if not set
               const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://supermarket-backend-ytrh.onrender.com";
               const response = await fetch(
                 `${backendUrl}/verify-location`,
@@ -391,12 +351,66 @@ const AppInner: React.FC = () => {
 
   // --- Registration enforcement ---
   const isUserRegistered = !!userId && !accessError;
-  // Bypass registration requirement in dev mode (localhost or VITE_DEV_MODE)
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const devMode = import.meta.env.VITE_DEV_MODE === 'true' || import.meta.env.MODE !== 'production';
-  // Only disable order review if we're still loading initially OR if user is definitely not registered
-  // Don't disable if user is already authenticated (prevent flickering during operations)
   const disableOrderReview = (authLoading && !userId) || (!isUserRegistered && !isLocalhost && !devMode);
+
+  // --- Native-like navigation integration ---
+  // Track if we are pushing state to avoid duplicate push
+  const isPushingState = useRef(false);
+
+  useEffect(() => {
+    // Push initial state if not present
+    if (window.history.state === null) {
+      window.history.replaceState({ page: currentPage, tab }, '');
+    }
+  }, []);
+
+  useEffect(() => {
+    // Only push state if not home
+    if (currentPage !== 'home' && !isPushingState.current) {
+      window.history.pushState({ page: currentPage, tab }, '');
+      isPushingState.current = true;
+      setTimeout(() => { isPushingState.current = false; }, 100);
+    }
+  }, [currentPage, tab, navigationStack]);
+
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      // If on home, allow default (WebApp closes/minimizes)
+      if (currentPage === 'home') {
+        return;
+      }
+      // On other pages, prevent closing and navigate back in app
+      e.preventDefault?.();
+      handleSmartBack();
+      // Push state again to prevent leaving WebApp
+      window.history.pushState({ page: currentPage, tab }, '');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+    // eslint-disable-next-line
+  }, [currentPage, tab, navigationStack]);
+
+  // Telegram WebApp BackButton integration
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+
+    if (currentPage === 'home') {
+      tg.BackButton.hide();
+    } else {
+      tg.BackButton.show();
+      tg.BackButton.onClick(handleSmartBack);
+    }
+    return () => {
+      if (tg.BackButton) {
+        tg.BackButton.offClick(handleSmartBack);
+      }
+    };
+  }, [currentPage]);
 
   // --- UI rendering ---
   if (tgAccessError) {
@@ -409,152 +423,142 @@ const AppInner: React.FC = () => {
       </div>
     );
   }
-if (authLoading) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-center relative overflow-hidden">
-      {/* Animated background particles */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-teal-400 rounded-full opacity-30 animate-float-1"></div>
-        <div className="absolute top-1/3 right-1/4 w-1 h-1 bg-amber-400 rounded-full opacity-40 animate-float-2"></div>
-        <div className="absolute bottom-1/4 left-1/3 w-1.5 h-1.5 bg-teal-300 rounded-full opacity-25 animate-float-3"></div>
-      </div>
-
-      <div className="relative flex flex-col items-center z-10">
-        {/* Logo with enhanced visibility */}
-        <div className="relative mb-12">
-          {/* Logo glow background */}
-          <div className="absolute inset-0 bg-white rounded-2xl opacity-90 blur-md transform scale-110"></div>
-          <div className="relative bg-white rounded-xl p-6 shadow-2xl">
-            <img
-              src={logo}
-              alt="7Days Hypermarket Logo"
-              className="w-28 h-28 md:w-32 md:h-32 object-contain animate-logo-entrance"
-              draggable={false}
-            />
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-center relative overflow-hidden">
+        {/* Animated background particles */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-teal-400 rounded-full opacity-30 animate-float-1"></div>
+          <div className="absolute top-1/3 right-1/4 w-1 h-1 bg-amber-400 rounded-full opacity-40 animate-float-2"></div>
+          <div className="absolute bottom-1/4 left-1/3 w-1.5 h-1.5 bg-teal-300 rounded-full opacity-25 animate-float-3"></div>
+        </div>
+        <div className="relative flex flex-col items-center z-10">
+          {/* Logo with enhanced visibility */}
+          <div className="relative mb-12">
+            {/* Logo glow background */}
+            <div className="absolute inset-0 bg-white rounded-2xl opacity-90 blur-md transform scale-110"></div>
+            <div className="relative bg-white rounded-xl p-6 shadow-2xl">
+              <img
+                src={logo}
+                alt="7Days Hypermarket Logo"
+                className="w-28 h-28 md:w-32 md:h-32 object-contain animate-logo-entrance"
+                draggable={false}
+              />
+            </div>
+            {/* Animated ring around logo */}
+            <div className="absolute inset-0 border-2 border-teal-400 rounded-xl opacity-50 animate-pulse-ring"></div>
           </div>
-          {/* Animated ring around logo */}
-          <div className="absolute inset-0 border-2 border-teal-400 rounded-xl opacity-50 animate-pulse-ring"></div>
-        </div>
-
-        {/* Premium "Opening" text */}
-        <div className="relative">
-          <h1 className="text-4xl md:text-5xl font-black text-white mb-4 animate-text-entrance"
-              style={{
-                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-                letterSpacing: '0.05em',
-                textShadow: '0 4px 20px rgba(0,0,0,0.3)',
-                background: 'linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
-              }}>
-            Opening
-          </h1>
-          
-          {/* Animated dots */}
-          <div className="flex justify-center space-x-1 mt-2">
-            <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-1"></div>
-            <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-2"></div>
-            <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-3"></div>
+          {/* Premium "Opening" text */}
+          <div className="relative">
+            <h1 className="text-4xl md:text-5xl font-black text-white mb-4 animate-text-entrance"
+                style={{
+                  fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                  letterSpacing: '0.05em',
+                  textShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                  background: 'linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
+                }}>
+              Opening
+            </h1>
+            {/* Animated dots */}
+            <div className="flex justify-center space-x-1 mt-2">
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-1"></div>
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-2"></div>
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-dot-3"></div>
+            </div>
+          </div>
+          {/* Premium loading bar */}
+          <div className="mt-8 w-48 h-1 bg-gray-700 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-teal-400 via-amber-400 to-teal-400 rounded-full animate-loading-bar"></div>
           </div>
         </div>
-
-        {/* Premium loading bar */}
-        <div className="mt-8 w-48 h-1 bg-gray-700 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-teal-400 via-amber-400 to-teal-400 rounded-full animate-loading-bar"></div>
-        </div>
+        <style>{`
+          @keyframes logo-entrance {
+            0% { 
+              transform: scale(0.3) rotateY(-180deg); 
+              opacity: 0; 
+            }
+            60% { 
+              transform: scale(1.1) rotateY(10deg); 
+              opacity: 1; 
+            }
+            100% { 
+              transform: scale(1) rotateY(0deg); 
+              opacity: 1; 
+            }
+          }
+          .animate-logo-entrance {
+            animation: logo-entrance 1.5s cubic-bezier(.68,-0.55,.27,1.55) both;
+          }
+          @keyframes text-entrance {
+            0% { 
+              opacity: 0; 
+              transform: translateY(30px) scale(0.9); 
+            }
+            100% { 
+              opacity: 1; 
+              transform: translateY(0) scale(1); 
+            }
+          }
+          .animate-text-entrance {
+            animation: text-entrance 1.2s 0.8s cubic-bezier(.68,-0.55,.27,1.55) both;
+          }
+          @keyframes pulse-ring {
+            0%, 100% { 
+              transform: scale(1); 
+              opacity: 0.5; 
+            }
+            50% { 
+              transform: scale(1.05); 
+              opacity: 0.2; 
+            }
+          }
+          .animate-pulse-ring {
+            animation: pulse-ring 2s infinite;
+          }
+          @keyframes dot-1 {
+            0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes dot-2 {
+            0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes dot-3 {
+            0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+          }
+          .animate-dot-1 { animation: dot-1 1.5s 0s infinite; }
+          .animate-dot-2 { animation: dot-2 1.5s 0.2s infinite; }
+          .animate-dot-3 { animation: dot-3 1.5s 0.4s infinite; }
+          @keyframes loading-bar {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+          }
+          .animate-loading-bar {
+            animation: loading-bar 2s infinite;
+          }
+          @keyframes float-1 {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(180deg); }
+          }
+          @keyframes float-2 {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-15px) rotate(-180deg); }
+          }
+          @keyframes float-3 {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-25px) rotate(90deg); }
+          }
+          .animate-float-1 { animation: float-1 6s infinite; }
+          .animate-float-2 { animation: float-2 4s infinite; }
+          .animate-float-3 { animation: float-3 5s infinite; }
+        `}</style>
       </div>
-
-      <style>{`
-        @keyframes logo-entrance {
-          0% { 
-            transform: scale(0.3) rotateY(-180deg); 
-            opacity: 0; 
-          }
-          60% { 
-            transform: scale(1.1) rotateY(10deg); 
-            opacity: 1; 
-          }
-          100% { 
-            transform: scale(1) rotateY(0deg); 
-            opacity: 1; 
-          }
-        }
-        .animate-logo-entrance {
-          animation: logo-entrance 1.5s cubic-bezier(.68,-0.55,.27,1.55) both;
-        }
-
-        @keyframes text-entrance {
-          0% { 
-            opacity: 0; 
-            transform: translateY(30px) scale(0.9); 
-          }
-          100% { 
-            opacity: 1; 
-            transform: translateY(0) scale(1); 
-          }
-        }
-        .animate-text-entrance {
-          animation: text-entrance 1.2s 0.8s cubic-bezier(.68,-0.55,.27,1.55) both;
-        }
-
-        @keyframes pulse-ring {
-          0%, 100% { 
-            transform: scale(1); 
-            opacity: 0.5; 
-          }
-          50% { 
-            transform: scale(1.05); 
-            opacity: 0.2; 
-          }
-        }
-        .animate-pulse-ring {
-          animation: pulse-ring 2s infinite;
-        }
-
-        @keyframes dot-1 {
-          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes dot-2 {
-          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes dot-3 {
-          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-        .animate-dot-1 { animation: dot-1 1.5s 0s infinite; }
-        .animate-dot-2 { animation: dot-2 1.5s 0.2s infinite; }
-        .animate-dot-3 { animation: dot-3 1.5s 0.4s infinite; }
-
-        @keyframes loading-bar {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(400%); }
-        }
-        .animate-loading-bar {
-          animation: loading-bar 2s infinite;
-        }
-
-        @keyframes float-1 {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-20px) rotate(180deg); }
-        }
-        @keyframes float-2 {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-15px) rotate(-180deg); }
-        }
-        @keyframes float-3 {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-25px) rotate(90deg); }
-        }
-        .animate-float-1 { animation: float-1 6s infinite; }
-        .animate-float-2 { animation: float-2 4s infinite; }
-        .animate-float-3 { animation: float-3 5s infinite; }
-      `}</style>
-    </div>
-  );
-}
+    );
+  }
   if (accessError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
@@ -618,7 +622,6 @@ if (authLoading) {
 
       {/* Show warning if user is not registered or loading */}
       {(() => { 
-        console.log('REGISTRATION WARNING CHECK', { disableOrderReview, userId, accessError, authLoading });
         return disableOrderReview && (
           <div className="max-w-lg mx-auto mt-4">
             <div className="flex items-center bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow">
@@ -680,7 +683,7 @@ if (authLoading) {
         {/* Search Page Overlay */}
         {currentPage === 'search' && (
           <SearchPage 
-            onBack={handleBackToHome}
+            onBack={handleSmartBack}
             initialQuery={searchQuery}
           />
         )}
