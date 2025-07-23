@@ -94,10 +94,12 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   };
 
-  // Open product detail modal (push to stack only)
+  // Open product detail modal (push to stack and history)
   const handleProductClick = useCallback((productId: string) => {
     const product = products.find(p => p.id === productId);
     if (product) {
+      // Always push to history first
+      window.history.pushState({ productModal: true, productId }, '');
       setProductModalStack(prev => {
         // Prevent duplicate push if already top of stack
         if (prev.length && prev[prev.length - 1].id === product.id) return prev;
@@ -106,19 +108,15 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   }, [products]);
 
-  // Handle modal close/back (pop the stack)
+  // Handle modal close/back (just trigger history back)
   const handleProductModalBack = useCallback(() => {
-    setProductModalStack(prev => {
-      if (prev.length > 1) {
-        return prev.slice(0, -1);
-      } else {
-        return [];
-      }
-    });
+    window.history.back();
   }, []);
 
   // When opening a similar product from inside the modal
   const handleProductSelectFromModal = useCallback((newProduct: Product) => {
+    // Always push to history first
+    window.history.pushState({ productModal: true, productId: newProduct.id }, '');
     setProductModalStack(prev => {
       // Prevent duplicate push if already top of stack
       if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
@@ -126,29 +124,21 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     });
   }, []);
 
-  // Push a dummy state when modal opens to handle browser back button
-  useEffect(() => {
-    if (productModalStack.length > 0) {
-      // Push a state when modal opens
-      window.history.pushState({ modalOpen: true }, '');
-    }
-  }, [productModalStack.length]);
-
-  // Listen for browser back button and handle modal stack
+  // Listen for browser back button and handle modal stack properly
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      if (productModalStack.length > 0) {
-        // Prevent browser navigation, handle with our stack
-        e.preventDefault?.();
-        handleProductModalBack();
-        // Push state back to prevent actual navigation
-        window.history.pushState({ modalOpen: true }, '');
-      }
+      // Only pop the stack, don't manipulate history further
+      setProductModalStack(prev => {
+        if (prev.length > 0) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
     };
     
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [productModalStack.length, handleProductModalBack]);
+  }, []);
 
   // Telegram WebApp BackButton integration for modal stack
   useEffect(() => {
