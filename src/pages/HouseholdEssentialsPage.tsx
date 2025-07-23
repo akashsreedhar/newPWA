@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, Search } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
@@ -31,50 +31,52 @@ interface HouseholdEssentialsPageProps {
   onSearchOpen: () => void;
 }
 
-const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({ 
-  onBack, 
+const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
+  onBack,
   onNavigateToCategory,
-  onSearchOpen 
+  onSearchOpen
 }) => {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showProductDetail, setShowProductDetail] = useState(false);
+
+  // Modal stack for navigation
+  const [productModalStack, setProductModalStack] = useState<Product[]>([]);
+
   const { settings } = useProductLanguage();
 
   // Household Essentials subcategories - New modern categories
   const subcategories = [
-    { 
-      id: 'Home & Lifestyle', 
-      name_en: 'Home & Lifestyle', 
-      name_ml: 'ഹോമും ലൈഫ്സ്റ്റൈലും', 
+    {
+      id: 'Home & Lifestyle',
+      name_en: 'Home & Lifestyle',
+      name_ml: 'ഹോമും ലൈഫ്സ്റ്റൈലും',
       name_manglish: 'Home & Lifestyle',
       image: 'https://media.theeverygirl.com/wp-content/uploads/2025/01/lifestyle-editor-home-aesthetic-update-the-everygirl-feature.jpg',
       description: 'Home decoration and lifestyle products',
       malayalamDescription: 'വീട് അലങ്കാരവും ജീവിതശൈലി ഉൽപ്പന്നങ്ങളും'
     },
-    { 
-      id: 'Cleaners & Repellents', 
-      name_en: 'Cleaners & Repellents', 
-      name_ml: 'ക്ലീനറും കീടനാശിനികളും', 
+    {
+      id: 'Cleaners & Repellents',
+      name_en: 'Cleaners & Repellents',
+      name_ml: 'ക്ലീനറും കീടനാശിനികളും',
       name_manglish: 'Cleaners & Repellents',
       image: 'https://img.freepik.com/free-photo/disinfection-equipment-table_23-2148577795.jpg',
       description: 'Cleaning products and pest repellents',
       malayalamDescription: 'വൃത്തിയാക്കൽ ഉൽപ്പന്നങ്ങളും കീടനാശിനികളും'
     },
-    { 
-      id: 'Electronics', 
-      name_en: 'Electronics', 
-      name_ml: 'ഇലക്ട്രോണിക്സ്', 
+    {
+      id: 'Electronics',
+      name_en: 'Electronics',
+      name_ml: 'ഇലക്ട്രോണിക്സ്',
       name_manglish: 'Electronics',
       image: 'https://t4.ftcdn.net/jpg/03/64/41/07/360_F_364410756_Ev3WoDfNyxO9c9n4tYIsU5YBQWAP3UF8.jpg',
       description: 'Electronic gadgets and appliances',
       malayalamDescription: 'ഇലക്ട്രോണിക് ഗാഡ്ജെറ്റുകളും ഉപകരണങ്ങളും'
     },
-    { 
-      id: 'Stationery & Games', 
-      name_en: 'Stationery & Games', 
-      name_ml: 'സ്റ്റേഷനറിയും ഗെയിമുകളും', 
+    {
+      id: 'Stationery & Games',
+      name_en: 'Stationery & Games',
+      name_ml: 'സ്റ്റേഷനറിയും ഗെയിമുകളും',
       name_manglish: 'Stationery & Games',
       image: 'https://img.freepik.com/free-photo/back-school-concept-with-various-supplies_23-2149557517.jpg?semt=ais_hybrid&w=740',
       description: 'Stationery supplies and games',
@@ -117,18 +119,23 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
     async function fetchFeaturedProducts() {
       setLoading(true);
       try {
-        // Get all new categories that map to Household Essentials
-        const householdCategories = ['Home & Lifestyle', 'Cleaners & Repellents', 'Electronics', 'Stationery & Games'];
+        const householdCategories = [
+          'Home & Lifestyle',
+          'Cleaners & Repellents',
+          'Electronics',
+          'Stationery & Games'
+        ];
         const allProductsQuery = collection(db, 'products');
         const allProductsSnapshot = await getDocs(allProductsQuery);
 
-        // Filter out unavailable products
         const householdProducts = allProductsSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Product))
-          .filter(product => 
-            product.category && householdCategories.includes(product.category) && product.available !== false
+          .filter(product =>
+            product.category &&
+            householdCategories.includes(product.category) &&
+            product.available !== false
           )
-          .slice(0, 10); // Limit to 10 featured products
+          .slice(0, 10);
 
         setFeaturedProducts(householdProducts);
       } catch (error) {
@@ -141,12 +148,11 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
     fetchFeaturedProducts();
   }, []);
 
-  const handleProductClick = async (productId: string) => {
-    // Find the product in current list first
+  // Modal navigation logic (stack + history)
+  const handleProductClick = useCallback(async (productId: string) => {
     let product = featuredProducts.find(p => p.id === productId);
 
     if (!product) {
-      // If not found, fetch from Firestore
       try {
         const productDoc = await getDocs(query(collection(db, 'products'), where('__name__', '==', productId)));
         if (!productDoc.empty) {
@@ -159,19 +165,59 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
     }
 
     if (product) {
-      setSelectedProduct(product);
-      setShowProductDetail(true);
+      window.history.pushState({ productModal: true, productId }, '');
+      setProductModalStack(prev => {
+        if (prev.length && prev[prev.length - 1].id === product.id) return prev;
+        return [...prev, product];
+      });
     }
-  };
+  }, [featuredProducts]);
 
-  // Handle product selection from modal (receives full product object)
-  const handleProductSelectFromModal = (product: Product) => {
-    setSelectedProduct(product);
-    // Keep modal open to show the new product
-  };
+  const handleProductModalBack = useCallback(() => {
+    window.history.back();
+  }, []);
+
+  const handleProductSelectFromModal = useCallback((newProduct: Product) => {
+    window.history.pushState({ productModal: true, productId: newProduct.id }, '');
+    setProductModalStack(prev => {
+      if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
+      return [...prev, newProduct];
+    });
+  }, []);
+
+  // Listen for browser back button and handle modal stack properly
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      setProductModalStack(prev => {
+        if (prev.length > 0) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Telegram WebApp BackButton integration for modal stack
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+    if (productModalStack.length > 0) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(handleProductModalBack);
+    } else {
+      tg.BackButton.hide();
+      tg.BackButton.offClick(handleProductModalBack);
+    }
+    return () => {
+      if (tg.BackButton) {
+        tg.BackButton.offClick(handleProductModalBack);
+      }
+    };
+  }, [productModalStack.length, handleProductModalBack]);
 
   const handleSubcategoryClick = (subcategoryId: string) => {
-    // Navigate directly to the new category
     onNavigateToCategory(subcategoryId);
   };
 
@@ -207,12 +253,12 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
             >
               {/* Large Image Container */}
               <div className="relative h-32 sm:h-36 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100 rounded-t-2xl">
-                <img 
-                  src={subcategory.image} 
+                <img
+                  src={subcategory.image}
                   alt={subcategory.name_en}
                   className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-300"
                   loading="lazy"
-                  style={{ 
+                  style={{
                     objectPosition: 'center center',
                     filter: 'brightness(1.05) contrast(1.02)'
                   }}
@@ -220,19 +266,19 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
                 {/* Subtle overlay for better text contrast */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent"></div>
               </div>
-              
+
               {/* Text Content */}
               <div className="relative p-4">
                 <h3 className="text-sm font-semibold text-gray-900 leading-tight mb-1 whitespace-pre-line">
                   {getSubcategoryDisplayName(subcategory)}
                 </h3>
                 <p className="text-xs text-gray-600 line-clamp-2">
-                  {settings.mode === 'single' && settings.singleLanguage === 'malayalam' 
-                    ? subcategory.malayalamDescription 
+                  {settings.mode === 'single' && settings.singleLanguage === 'malayalam'
+                    ? subcategory.malayalamDescription
                     : subcategory.description}
                 </p>
               </div>
-              
+
               {/* Hover indicator */}
               <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -262,7 +308,7 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
       {/* Featured Products Section */}
       <div className="px-4 py-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Featured Products</h2>
-        
+
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {[...Array(8)].map((_, index) => (
@@ -300,18 +346,15 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
         )}
       </div>
 
-      {/* Product Detail Modal */}
-      {showProductDetail && selectedProduct && (
+      {/* Product Detail Modal with stack navigation */}
+      {productModalStack.length > 0 && (
         <ProductDetailModal
           product={{
-            ...selectedProduct,
-            price: selectedProduct.price || 0
+            ...productModalStack[productModalStack.length - 1],
+            price: productModalStack[productModalStack.length - 1].price || 0
           }}
-          isOpen={showProductDetail}
-          onClose={() => {
-            setShowProductDetail(false);
-            setSelectedProduct(null);
-          }}
+          isOpen={true}
+          onClose={handleProductModalBack}
           onProductSelect={handleProductSelectFromModal}
         />
       )}

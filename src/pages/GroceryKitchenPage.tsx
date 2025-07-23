@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, Search } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
@@ -38,8 +38,10 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
 }) => {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showProductDetail, setShowProductDetail] = useState(false);
+
+  // Modal stack for navigation
+  const [productModalStack, setProductModalStack] = useState<Product[]>([]);
+
   const { settings } = useProductLanguage();
 
   // Grocery & Kitchen subcategories - New modern categories
@@ -135,7 +137,6 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
     async function fetchFeaturedProducts() {
       setLoading(true);
       try {
-        // Get all new categories that map to Grocery & Kitchen
         const groceryCategories = [
           'Fruits and Vegetables',
           'Rice, Atta & Dal',
@@ -148,7 +149,6 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
         const allProductsQuery = collection(db, 'products');
         const allProductsSnapshot = await getDocs(allProductsQuery);
 
-        // Filter out unavailable products
         const groceryProducts = allProductsSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Product))
           .filter(product =>
@@ -156,7 +156,7 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
             groceryCategories.includes(product.category) &&
             product.available !== false
           )
-          .slice(0, 10); // Limit to 10 featured products
+          .slice(0, 10);
 
         setFeaturedProducts(groceryProducts);
       } catch (error) {
@@ -169,12 +169,11 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
     fetchFeaturedProducts();
   }, []);
 
-  const handleProductClick = async (productId: string) => {
-    // Find the product in current list first
+  // Modal navigation logic (stack + history)
+  const handleProductClick = useCallback(async (productId: string) => {
     let product = featuredProducts.find(p => p.id === productId);
 
     if (!product) {
-      // If not found, fetch from Firestore
       try {
         const productDoc = await getDocs(query(collection(db, 'products'), where('__name__', '==', productId)));
         if (!productDoc.empty) {
@@ -187,19 +186,59 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
     }
 
     if (product) {
-      setSelectedProduct(product);
-      setShowProductDetail(true);
+      window.history.pushState({ productModal: true, productId }, '');
+      setProductModalStack(prev => {
+        if (prev.length && prev[prev.length - 1].id === product.id) return prev;
+        return [...prev, product];
+      });
     }
-  };
+  }, [featuredProducts]);
 
-  // Handle product selection from modal (receives full product object)
-  const handleProductSelectFromModal = (product: Product) => {
-    setSelectedProduct(product);
-    // Keep modal open to show the new product
-  };
+  const handleProductModalBack = useCallback(() => {
+    window.history.back();
+  }, []);
+
+  const handleProductSelectFromModal = useCallback((newProduct: Product) => {
+    window.history.pushState({ productModal: true, productId: newProduct.id }, '');
+    setProductModalStack(prev => {
+      if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
+      return [...prev, newProduct];
+    });
+  }, []);
+
+  // Listen for browser back button and handle modal stack properly
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      setProductModalStack(prev => {
+        if (prev.length > 0) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Telegram WebApp BackButton integration for modal stack
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+    if (productModalStack.length > 0) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(handleProductModalBack);
+    } else {
+      tg.BackButton.hide();
+      tg.BackButton.offClick(handleProductModalBack);
+    }
+    return () => {
+      if (tg.BackButton) {
+        tg.BackButton.offClick(handleProductModalBack);
+      }
+    };
+  }, [productModalStack.length, handleProductModalBack]);
 
   const handleSubcategoryClick = (subcategoryId: string) => {
-    // Navigate directly to the new category
     onNavigateToCategory(subcategoryId);
   };
 
@@ -328,18 +367,15 @@ const GroceryKitchenPage: React.FC<GroceryKitchenPageProps> = ({
         )}
       </div>
 
-      {/* Product Detail Modal */}
-      {showProductDetail && selectedProduct && (
+      {/* Product Detail Modal with stack navigation */}
+      {productModalStack.length > 0 && (
         <ProductDetailModal
           product={{
-            ...selectedProduct,
-            price: selectedProduct.price || 0
+            ...productModalStack[productModalStack.length - 1],
+            price: productModalStack[productModalStack.length - 1].price || 0
           }}
-          isOpen={showProductDetail}
-          onClose={() => {
-            setShowProductDetail(false);
-            setSelectedProduct(null);
-          }}
+          isOpen={true}
+          onClose={handleProductModalBack}
           onProductSelect={handleProductSelectFromModal}
         />
       )}

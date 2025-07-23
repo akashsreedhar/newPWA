@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, Search } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
@@ -31,68 +31,70 @@ interface SnacksDrinksPageProps {
   onSearchOpen: () => void;
 }
 
-const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({ 
-  onBack, 
+const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
+  onBack,
   onNavigateToCategory,
-  onSearchOpen 
+  onSearchOpen
 }) => {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showProductDetail, setShowProductDetail] = useState(false);
+
+  // Modal stack for navigation
+  const [productModalStack, setProductModalStack] = useState<Product[]>([]);
+
   const { settings } = useProductLanguage();
 
   // Snacks & Drinks subcategories - New modern categories
   const subcategories = [
-    { 
-      id: 'Chips', 
-      name_en: 'Chips', 
-      name_ml: 'ചിപ്സ്', 
+    {
+      id: 'Chips',
+      name_en: 'Chips',
+      name_ml: 'ചിപ്സ്',
       name_manglish: 'Chips',
       image: 'https://thumbs.dreamstime.com/b/packets-lays-potato-chips-poznan-poland-dec-lay-s-popular-american-brand-founded-owned-pepsico-135975194.jpg',
       description: 'Potato chips and snacks',
       malayalamDescription: 'ചിപ്സുകളും സ്നാക്സുകളും'
     },
-    { 
-      id: 'Sweet Chocolates', 
-      name_en: 'Sweet Chocolates', 
-      name_ml: 'മധുര ചോക്ലേറ്റുകൾ', 
+    {
+      id: 'Sweet Chocolates',
+      name_en: 'Sweet Chocolates',
+      name_ml: 'മധുര ചോക്ലേറ്റുകൾ',
       name_manglish: 'Madhura Chocolates',
       image: 'https://www.shutterstock.com/image-photo/broken-dark-chocolate-bar-cocoa-600nw-2449877063.jpg',
       description: 'Chocolates and sweet treats',
       malayalamDescription: 'ചോക്ലേറ്റുകളും മധുരപലഹാരങ്ങളും'
     },
-    { 
-      id: 'Bakery and Biscuits', 
-      name_en: 'Bakery and Biscuits', 
-      name_ml: 'ബേക്കറിയും ബിസ്കറ്റും', 
+    {
+      id: 'Bakery and Biscuits',
+      name_en: 'Bakery and Biscuits',
+      name_ml: 'ബേക്കറിയും ബിസ്കറ്റും',
       name_manglish: 'Bakery & Biscuits',
       image: 'https://4.imimg.com/data4/MS/HC/MY-23547870/bakery-biscuit-500x500.jpg',
       description: 'Bread, biscuits and bakery items',
       malayalamDescription: 'ബ്രെഡ്, ബിസ്കറ്റ്, ബേക്കറി സാധനങ്ങൾ'
     },
-    { 
-      id: 'Drinks and Juices', 
-      name_en: 'Drinks and Juices', 
-      name_ml: 'പാനീയങ്ങളും ജ്യൂസുകളും', 
+    {
+      id: 'Drinks and Juices',
+      name_en: 'Drinks and Juices',
+      name_ml: 'പാനീയങ്ങളും ജ്യൂസുകളും',
       name_manglish: 'Drinks & Juices',
       image: 'https://media.istockphoto.com/id/1370895233/vector/juice-packages-carton-boxes-fruit-drinks-bottles.jpg?s=612x612&w=0&k=20&c=5HITDdbyBNuFzXlOBQR-k38GYTZ62rsadKJPDYcS7_M=',
       description: 'Soft drinks and fruit juices',
       malayalamDescription: 'ശീതളപാനീയങ്ങളും ഫ്രൂട്ട് ജ്യൂസുകളും'
     },
-    { 
-      id: 'Tea, Coffee & Milk Drinks', 
-      name_en: 'Tea, Coffee & Milk Drinks', 
-      name_ml: 'ചായ, കാപ്പി, പാൽ പാനീയങ്ങൾ', 
+    {
+      id: 'Tea, Coffee & Milk Drinks',
+      name_en: 'Tea, Coffee & Milk Drinks',
+      name_ml: 'ചായ, കാപ്പി, പാൽ പാനീയങ്ങൾ',
       name_manglish: 'Tea, Coffee & Milk Drinks',
       image: 'https://assets-global.website-files.com/5ee7039040ea6efb80d7521c/5fec543f57cf9ed51bab411e_image6-2.jpg',
       description: 'Tea, coffee and milk drinks',
       malayalamDescription: 'ചായ, കാപ്പി, പാൽ പാനീയങ്ങൾ'
     },
-    { 
-      id: 'Instant Food', 
-      name_en: 'Instant Food', 
-      name_ml: 'ഇൻസ്റ്റന്റ് ഫുഡ്', 
+    {
+      id: 'Instant Food',
+      name_en: 'Instant Food',
+      name_ml: 'ഇൻസ്റ്റന്റ് ഫുഡ്',
       name_manglish: 'Instant Food',
       image: 'https://4.imimg.com/data4/EV/NY/MY-23547870/10-500x500.jpg',
       description: 'Ready-to-eat and instant foods',
@@ -135,7 +137,6 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
     async function fetchFeaturedProducts() {
       setLoading(true);
       try {
-        // Get all new categories that map to Snacks & Drinks
         const snackCategories = [
           'Chips',
           'Sweet Chocolates',
@@ -148,7 +149,6 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
         const allProductsQuery = collection(db, 'products');
         const allProductsSnapshot = await getDocs(allProductsQuery);
 
-        // Filter out unavailable products
         const snacksProducts = allProductsSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Product))
           .filter(product =>
@@ -156,7 +156,7 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
             snackCategories.includes(product.category) &&
             product.available !== false
           )
-          .slice(0, 10); // Limit to 10 featured products
+          .slice(0, 10);
 
         setFeaturedProducts(snacksProducts);
       } catch (error) {
@@ -169,12 +169,11 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
     fetchFeaturedProducts();
   }, []);
 
-  const handleProductClick = async (productId: string) => {
-    // Find the product in current list first
+  // Modal navigation logic (stack + history)
+  const handleProductClick = useCallback(async (productId: string) => {
     let product = featuredProducts.find(p => p.id === productId);
 
     if (!product) {
-      // If not found, fetch from Firestore
       try {
         const productDoc = await getDocs(query(collection(db, 'products'), where('__name__', '==', productId)));
         if (!productDoc.empty) {
@@ -187,19 +186,59 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
     }
 
     if (product) {
-      setSelectedProduct(product);
-      setShowProductDetail(true);
+      window.history.pushState({ productModal: true, productId }, '');
+      setProductModalStack(prev => {
+        if (prev.length && prev[prev.length - 1].id === product.id) return prev;
+        return [...prev, product];
+      });
     }
-  };
+  }, [featuredProducts]);
 
-  // Handle product selection from modal (receives full product object)
-  const handleProductSelectFromModal = (product: Product) => {
-    setSelectedProduct(product);
-    // Keep modal open to show the new product
-  };
+  const handleProductModalBack = useCallback(() => {
+    window.history.back();
+  }, []);
+
+  const handleProductSelectFromModal = useCallback((newProduct: Product) => {
+    window.history.pushState({ productModal: true, productId: newProduct.id }, '');
+    setProductModalStack(prev => {
+      if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
+      return [...prev, newProduct];
+    });
+  }, []);
+
+  // Listen for browser back button and handle modal stack properly
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      setProductModalStack(prev => {
+        if (prev.length > 0) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Telegram WebApp BackButton integration for modal stack
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+    if (productModalStack.length > 0) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(handleProductModalBack);
+    } else {
+      tg.BackButton.hide();
+      tg.BackButton.offClick(handleProductModalBack);
+    }
+    return () => {
+      if (tg.BackButton) {
+        tg.BackButton.offClick(handleProductModalBack);
+      }
+    };
+  }, [productModalStack.length, handleProductModalBack]);
 
   const handleSubcategoryClick = (subcategoryId: string) => {
-    // Navigate directly to the new category
     onNavigateToCategory(subcategoryId);
   };
 
@@ -235,12 +274,12 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
             >
               {/* Large Image Container */}
               <div className="relative h-32 sm:h-36 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100 rounded-t-2xl">
-                <img 
-                  src={subcategory.image} 
+                <img
+                  src={subcategory.image}
                   alt={subcategory.name_en}
                   className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-300"
                   loading="lazy"
-                  style={{ 
+                  style={{
                     objectPosition: 'center center',
                     filter: 'brightness(1.05) contrast(1.02)'
                   }}
@@ -248,19 +287,19 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
                 {/* Subtle overlay for better text contrast */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent"></div>
               </div>
-              
+
               {/* Text Content */}
               <div className="relative p-4">
                 <h3 className="text-sm font-semibold text-gray-900 leading-tight mb-1 whitespace-pre-line">
                   {getSubcategoryDisplayName(subcategory)}
                 </h3>
                 <p className="text-xs text-gray-600 line-clamp-2">
-                  {settings.mode === 'single' && settings.singleLanguage === 'malayalam' 
-                    ? subcategory.malayalamDescription 
+                  {settings.mode === 'single' && settings.singleLanguage === 'malayalam'
+                    ? subcategory.malayalamDescription
                     : subcategory.description}
                 </p>
               </div>
-              
+
               {/* Hover indicator */}
               <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -290,7 +329,7 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
       {/* Featured Products Section */}
       <div className="px-4 py-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Featured Products</h2>
-        
+
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {[...Array(8)].map((_, index) => (
@@ -328,18 +367,15 @@ const SnacksDrinksPage: React.FC<SnacksDrinksPageProps> = ({
         )}
       </div>
 
-      {/* Product Detail Modal */}
-      {showProductDetail && selectedProduct && (
+      {/* Product Detail Modal with stack navigation */}
+      {productModalStack.length > 0 && (
         <ProductDetailModal
           product={{
-            ...selectedProduct,
-            price: selectedProduct.price || 0
+            ...productModalStack[productModalStack.length - 1],
+            price: productModalStack[productModalStack.length - 1].price || 0
           }}
-          isOpen={showProductDetail}
-          onClose={() => {
-            setShowProductDetail(false);
-            setSelectedProduct(null);
-          }}
+          isOpen={true}
+          onClose={handleProductModalBack}
           onProductSelect={handleProductSelectFromModal}
         />
       )}
