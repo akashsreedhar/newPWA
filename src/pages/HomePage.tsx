@@ -63,8 +63,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     const { mode } = productLanguageSettings;
     if (mode === 'single') {
       return null; // No secondary name in single mode
-    } else if (mode === 'english-malayalam') {
-      return category.malayalamName; // Secondary: Malayalam
     } else if (mode === 'english-manglish') {
       return category.manglishName; // Secondary: Manglish
     }
@@ -96,11 +94,10 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   };
 
-  // Open product detail modal (push to stack and push to history)
+  // Open product detail modal (push to stack only)
   const handleProductClick = useCallback((productId: string) => {
     const product = products.find(p => p.id === productId);
     if (product) {
-      window.history.pushState({ productModal: true }, '');
       setProductModalStack(prev => {
         // Prevent duplicate push if already top of stack
         if (prev.length && prev[prev.length - 1].id === product.id) return prev;
@@ -109,34 +106,49 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   }, [products]);
 
-  // Handle modal close/back (just go back in history, let popstate handle the stack)
+  // Handle modal close/back (pop the stack)
   const handleProductModalBack = useCallback(() => {
-    window.history.back();
-  }, []);
-
-  // Listen for browser/phone back button to pop modal stack
-  useEffect(() => {
-    const onPopState = (e: PopStateEvent) => {
-      setProductModalStack(prev => {
-        if (prev.length > 0) {
-          return prev.slice(0, -1);
-        }
-        return prev;
-      });
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    setProductModalStack(prev => {
+      if (prev.length > 1) {
+        return prev.slice(0, -1);
+      } else {
+        return [];
+      }
+    });
   }, []);
 
   // When opening a similar product from inside the modal
   const handleProductSelectFromModal = useCallback((newProduct: Product) => {
-    window.history.pushState({ productModal: true }, '');
     setProductModalStack(prev => {
       // Prevent duplicate push if already top of stack
       if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
       return [...prev, newProduct];
     });
   }, []);
+
+  // Push a dummy state when modal opens to handle browser back button
+  useEffect(() => {
+    if (productModalStack.length > 0) {
+      // Push a state when modal opens
+      window.history.pushState({ modalOpen: true }, '');
+    }
+  }, [productModalStack.length]);
+
+  // Listen for browser back button and handle modal stack
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      if (productModalStack.length > 0) {
+        // Prevent browser navigation, handle with our stack
+        e.preventDefault?.();
+        handleProductModalBack();
+        // Push state back to prevent actual navigation
+        window.history.pushState({ modalOpen: true }, '');
+      }
+    };
+    
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [productModalStack.length, handleProductModalBack]);
 
   // Telegram WebApp BackButton integration for modal stack
   useEffect(() => {
