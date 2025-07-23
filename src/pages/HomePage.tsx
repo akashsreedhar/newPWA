@@ -100,10 +100,10 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
   const handleProductClick = useCallback((productId: string) => {
     const product = products.find(p => p.id === productId);
     if (product) {
+      window.history.pushState({ productModal: true }, '');
       setProductModalStack(prev => {
         // Prevent duplicate push if already top of stack
         if (prev.length && prev[prev.length - 1].id === product.id) return prev;
-        window.history.pushState({ productModal: true }, '');
         return [...prev, product];
       });
     }
@@ -130,10 +130,10 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
 
   // When opening a similar product from inside the modal
   const handleProductSelectFromModal = useCallback((newProduct: Product) => {
+    window.history.pushState({ productModal: true }, '');
     setProductModalStack(prev => {
       // Prevent duplicate push if already top of stack
       if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
-      window.history.pushState({ productModal: true }, '');
       return [...prev, newProduct];
     });
   }, []);
