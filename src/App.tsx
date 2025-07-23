@@ -422,10 +422,9 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // Check if we're in CategoryPage with modals or subcategory filters
-      if (currentPage === 'category') {
-        // Let CategoryPage handle its own navigation (modals/subcategories)
-        // Don't interfere with its internal navigation
+      // Check if we're in CategoryPage OR dedicated category pages with modals
+      if (currentPage === 'category' || currentPage === 'dedicated-category') {
+        // Let these pages handle their own navigation (modals/subcategories)
         return;
       }
 
@@ -448,8 +447,8 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
-    // Don't manage Telegram back button for CategoryPage - let it handle its own
-    if (currentPage === 'category') {
+    // Don't manage Telegram back button for CategoryPage OR dedicated category pages
+    if (currentPage === 'category' || currentPage === 'dedicated-category') {
       return;
     }
 
@@ -470,8 +469,8 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
 
-    // Don't manage Telegram events for CategoryPage - let it handle its own
-    if (currentPage === 'category') {
+    // Don't manage Telegram events for CategoryPage OR dedicated category pages
+    if (currentPage === 'category' || currentPage === 'dedicated-category') {
       return;
     }
 
