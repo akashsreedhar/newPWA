@@ -688,7 +688,14 @@ const AppInner: React.FC = () => {
             deliveryAllowed={deliveryAllowed}
             deliveryCheckPending={deliveryCheckPending}
             onOrderPlaced={handleOrderPlaced}
-            onNavigateToOrders={() => setTab('orders')}
+           onNavigateToOrders={() => {
+              setTab('orders');
+              setCurrentPage('orders');
+              setSearchQuery('');
+              setSelectedCategory('');
+              setNavigationStack(prev => [...prev, 'orders']);
+              window.scrollTo(0, 0);
+            }}
           />
         )}
         {currentPage === 'orders' && (
