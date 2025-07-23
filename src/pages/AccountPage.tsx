@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Listbox } from '@headlessui/react';
 import { Globe, MapPin } from 'lucide-react';
@@ -16,9 +15,11 @@ interface User {
 
 interface AccountPageProps {
   userId?: string | null;
+  onOpenAddressModal?: () => void;
+  onCloseAddressModal?: () => void;
 }
 
-const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
+const AccountPage: React.FC<AccountPageProps> = ({ userId, onOpenAddressModal, onCloseAddressModal }) => {
   const { language, setLanguage } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,10 +27,10 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [addressModalMode, setAddressModalMode] = useState<'list' | 'add' | 'edit'>('list');
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
-  
+
   // Use the product language hook
   const { settings: productLanguageSettings, updateMode, updateSingleLanguage } = useProductLanguage();
-  
+
   // Use the addresses hook
   const {
     addresses,
@@ -50,34 +51,41 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
       setLoading(false);
       return;
     }
-    
-    console.log('AccountPage: Fetching user data for userId:', userId);
+
     setLoading(true);
     setError(null);
-    
+
     getDoc(doc(db, "users", String(userId)))
       .then(docSnap => {
         if (docSnap.exists()) {
           const userData = docSnap.data();
-          console.log('AccountPage: User data fetched:', userData);
           setUser(userData);
         } else {
-          console.log('AccountPage: User document not found');
           setUser(null);
         }
         setLoading(false);
       })
       .catch(error => {
-        console.error('AccountPage: Error fetching user data:', error);
         setError('Failed to load user data');
         setLoading(false);
       });
   }, [userId]);
 
+  // --- Modal navigation integration ---
+  // Listen for custom event to close AddressModal (from App.tsx navigation stack)
+  useEffect(() => {
+    const handler = () => {
+      setShowAddressModal(false);
+      if (onCloseAddressModal) onCloseAddressModal();
+    };
+    window.addEventListener('closeAddressModal', handler);
+    return () => window.removeEventListener('closeAddressModal', handler);
+  }, [onCloseAddressModal]);
+
   const getLanguageLabel = (lang: Language) => {
     const langObj = languages.find(l => l.key === lang);
     if (!langObj) return lang;
-    
+
     switch (language) {
       case 'malayalam':
         return langObj.malayalamLabel;
@@ -91,8 +99,9 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
       await saveAddress(address);
       refreshAddresses();
       setShowAddressModal(false);
+      if (onCloseAddressModal) onCloseAddressModal();
     } catch (error) {
-      console.error('Error saving address:', error);
+      // Optionally handle error
     }
   };
 
@@ -101,18 +110,20 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
       await deleteAddress(addressId);
       refreshAddresses();
     } catch (error) {
-      console.error('Error deleting address:', error);
+      // Optionally handle error
     }
   };
 
   const handleAddressSelect = (address: Address) => {
     setSelectedAddress(address);
     setShowAddressModal(false);
+    if (onCloseAddressModal) onCloseAddressModal();
   };
 
   const openChangeAddressModal = () => {
     setAddressModalMode('list');
     setShowAddressModal(true);
+    if (onOpenAddressModal) onOpenAddressModal();
   };
 
   const defaultAddress = addresses?.find((addr: any) => addr.isDefault);
@@ -127,7 +138,7 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
       </div>
     );
   }
-  
+
   if (error) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -151,11 +162,10 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
   return (
     <div className="bg-gray-50 min-h-screen pb-20 sm:pb-24">
       <div className="bg-white border-b border-gray-200 p-4 sm:p-6">
-        {/* User Name and Phone - Large, Bold Display with Crown centered above name */}
+        {/* User Name and Phone - Large, Bold Display */}
         <div className="text-center relative flex flex-col items-center">
-          {/* User name and phone, clean and centered, no crown */}
           <div className="flex flex-col items-center justify-center py-2">
-            <span className="text-3xl sm:text-4xl font-extrabold text-gray-900 block mb-1" style={{lineHeight:'1.1', letterSpacing: '-0.02em'}}>
+            <span className="text-3xl sm:text-4xl font-extrabold text-gray-900 block mb-1" style={{ lineHeight: '1.1', letterSpacing: '-0.02em' }}>
               {user?.name || 'User'}
             </span>
             <span className="text-lg sm:text-xl text-gray-600 block">
@@ -341,7 +351,10 @@ const AccountPage: React.FC<AccountPageProps> = ({ userId }) => {
       {showAddressModal && (
         <AddressModal
           open={showAddressModal}
-          onClose={() => setShowAddressModal(false)}
+          onClose={() => {
+            setShowAddressModal(false);
+            if (onCloseAddressModal) onCloseAddressModal();
+          }}
           onSave={handleAddressModalSave}
           onDelete={handleAddressModalDelete}
           onSelect={handleAddressSelect}

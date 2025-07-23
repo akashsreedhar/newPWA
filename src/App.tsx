@@ -145,6 +145,12 @@ const AppInner: React.FC = () => {
       return;
     }
 
+    if (last === 'modal:address') {
+      // Just close the address modal, don't change the page
+      window.dispatchEvent(new CustomEvent('closeAddressModal'));
+      return;
+    }
+
     const previousPage = newStack[newStack.length - 1];
     if (MAIN_PAGES.includes(previousPage)) {
       setCurrentPage(previousPage as typeof currentPage);
@@ -211,6 +217,19 @@ const AppInner: React.FC = () => {
   const handleCloseOrderReview = () => {
     setNavigationStack(prev => {
       if (prev[prev.length - 1] === 'modal:order-review') {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+  };
+
+  const handleOpenAddressModal = () => {
+    setNavigationStack(prev => [...prev, 'modal:address']);
+  };
+
+  const handleCloseAddressModal = () => {
+    setNavigationStack(prev => {
+      if (prev[prev.length - 1] === 'modal:address') {
         return prev.slice(0, -1);
       }
       return prev;
@@ -724,7 +743,11 @@ const AppInner: React.FC = () => {
           <OrdersPage userId={userId} onNavigateToCart={() => setTab('cart')} />
         )}
         {currentPage === 'account' && (
-          <AccountPage userId={userId} />
+          <AccountPage 
+            userId={userId} 
+            onOpenAddressModal={handleOpenAddressModal}
+            onCloseAddressModal={handleCloseAddressModal}
+          />
         )}
 
         {/* Search Page Overlay */}
