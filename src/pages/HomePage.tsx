@@ -147,6 +147,25 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     });
   }, []);
 
+  // Telegram WebApp BackButton integration for modal stack
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+
+    if (productModalStack.length > 0) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(handleProductModalBack);
+    } else {
+      tg.BackButton.hide();
+      tg.BackButton.offClick(handleProductModalBack);
+    }
+    return () => {
+      if (tg.BackButton) {
+        tg.BackButton.offClick(handleProductModalBack);
+      }
+    };
+  }, [productModalStack.length, handleProductModalBack]);
+
   const mainCategories = [
     {
       name: 'Grocery & Kitchen',
