@@ -136,8 +136,14 @@ const AppInner: React.FC = () => {
       return;
     }
     const newStack = [...navigationStack];
-    newStack.pop();
+    const last = newStack.pop();
     setNavigationStack(newStack);
+
+    if (last === 'modal:order-review') {
+      // Just close the modal, don't change the page
+      window.dispatchEvent(new CustomEvent('closeOrderReviewModal'));
+      return;
+    }
 
     const previousPage = newStack[newStack.length - 1];
     if (MAIN_PAGES.includes(previousPage)) {
@@ -195,6 +201,20 @@ const AppInner: React.FC = () => {
       setOrderSuccess(null);
       setTimeout(() => setOrderError(null), 5000);
     }
+  };
+
+  // Modal navigation handlers
+  const handleOpenOrderReview = () => {
+    setNavigationStack(prev => [...prev, 'modal:order-review']);
+  };
+
+  const handleCloseOrderReview = () => {
+    setNavigationStack(prev => {
+      if (prev[prev.length - 1] === 'modal:order-review') {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
   };
 
   // --- Auth ---
@@ -688,7 +708,7 @@ const AppInner: React.FC = () => {
             deliveryAllowed={deliveryAllowed}
             deliveryCheckPending={deliveryCheckPending}
             onOrderPlaced={handleOrderPlaced}
-           onNavigateToOrders={() => {
+            onNavigateToOrders={() => {
               setTab('orders');
               setCurrentPage('orders');
               setSearchQuery('');
@@ -696,6 +716,8 @@ const AppInner: React.FC = () => {
               setNavigationStack(prev => [...prev, 'orders']);
               window.scrollTo(0, 0);
             }}
+            onOpenOrderReview={handleOpenOrderReview}
+            onCloseOrderReview={handleCloseOrderReview}
           />
         )}
         {currentPage === 'orders' && (

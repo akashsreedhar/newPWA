@@ -19,6 +19,8 @@ interface CartPageProps {
   deliveryCheckPending?: boolean;
   onOrderPlaced?: (success: boolean, message: string) => void;
   onNavigateToOrders?: () => void;
+  onOpenOrderReview?: () => void;
+  onCloseOrderReview?: () => void;
 }
 
 const CartPage: React.FC<CartPageProps> = ({
@@ -29,7 +31,9 @@ const CartPage: React.FC<CartPageProps> = ({
   deliveryAllowed = true,
   deliveryCheckPending = false,
   onOrderPlaced,
-  onNavigateToOrders
+  onNavigateToOrders,
+  onOpenOrderReview,
+  onCloseOrderReview
 }) => {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [priceChangeModalOpen, setPriceChangeModalOpen] = useState(false);
@@ -72,6 +76,16 @@ const CartPage: React.FC<CartPageProps> = ({
       window.removeEventListener('cartUpdated', handleCartUpdate as EventListener);
     };
   }, []);
+
+  // Listen for modal close event from navigation
+  useEffect(() => {
+    const handler = () => {
+      setReviewOpen(false);
+      if (onCloseOrderReview) onCloseOrderReview();
+    };
+    window.addEventListener('closeOrderReviewModal', handler);
+    return () => window.removeEventListener('closeOrderReviewModal', handler);
+  }, [onCloseOrderReview]);
 
   // Separate trigger for validation after state changes
   const [forceValidationTrigger, setForceValidationTrigger] = useState(0);
@@ -287,6 +301,7 @@ const CartPage: React.FC<CartPageProps> = ({
         setPriceValidationResult({ ...validation, updatedItems: filteredUpdatedItems });
         setPriceChangeModalOpen(true);
       } else {
+        if (onOpenOrderReview) onOpenOrderReview();
         setReviewOpen(true);
       }
     } catch (error) {
@@ -297,6 +312,7 @@ const CartPage: React.FC<CartPageProps> = ({
         timestamp: new Date().toISOString()
       });
       if (confirm('Unable to verify current prices. This may result in price differences. Continue anyway?')) {
+        if (onOpenOrderReview) onOpenOrderReview();
         setReviewOpen(true);
       }
     } finally {
@@ -313,6 +329,7 @@ const CartPage: React.FC<CartPageProps> = ({
       setPriceValidationResult(null);
       setPriceChangeModalOpen(false);
       setTimeout(() => {
+        if (onOpenOrderReview) onOpenOrderReview();
         setReviewOpen(true);
       }, 500);
     } else {
@@ -438,6 +455,7 @@ const CartPage: React.FC<CartPageProps> = ({
   const handleModalClose = () => {
     setReviewOpen(false);
     setPriceValidationResult(null);
+    if (onCloseOrderReview) onCloseOrderReview();
     setTimeout(() => {
       triggerValidation();
     }, 100);
