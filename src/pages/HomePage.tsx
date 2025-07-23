@@ -109,18 +109,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   }, [products]);
 
-  // Handle modal close/back (pop stack and pop history)
+  // Handle modal close/back (just go back in history, let popstate handle the stack)
   const handleProductModalBack = useCallback(() => {
-    setProductModalStack(prev => {
-      if (prev.length > 1) {
-        window.history.back();
-        return prev.slice(0, -1);
-      } else if (prev.length === 1) {
-        window.history.back();
-        return [];
-      }
-      return prev;
-    });
+    window.history.back();
   }, []);
 
   // Listen for browser/phone back button to pop modal stack
