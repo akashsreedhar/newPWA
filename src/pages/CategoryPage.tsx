@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { ArrowLeft, Filter, SortAsc } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
@@ -35,9 +35,11 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'popular'>('popular');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showProductDetail, setShowProductDetail] = useState(false);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  
+  // Use a stack for product modal navigation (like HomePage)
+  const [productModalStack, setProductModalStack] = useState<Product[]>([]);
+  
   const { settings } = useProductLanguage();
 
   // Corrected category system - subcategories with multilingual support
@@ -112,6 +114,111 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
     [category, isMainCategory]
   );
 
+  // Handle subcategory selection with browser history
+  const handleSubcategorySelect = useCallback((subcategoryId: string | null) => {
+    if (subcategoryId === selectedSubcategory) {
+      // Clear filter
+      setSelectedSubcategory(null);
+      window.history.back();
+    } else {
+      // Select subcategory
+      setSelectedSubcategory(subcategoryId);
+      window.history.pushState({ subcategory: subcategoryId }, '');
+    }
+  }, [selectedSubcategory]);
+
+  // Handle product modal open (push to stack and history)
+  const handleProductClick = useCallback(async (productId: string) => {
+    // Find the product in current list first
+    let product = products.find(p => p.id === productId);
+
+    if (!product) {
+      // If not found, fetch from Firestore (shouldn't happen in category view, but safety)
+      try {
+        const productDoc = await getDocs(query(collection(db, 'products'), where('__name__', '==', productId)));
+        if (!productDoc.empty) {
+          product = { id: productDoc.docs[0].id, ...productDoc.docs[0].data() } as Product;
+        }
+      } catch (error) {
+        console.error('Error fetching product details:', error);
+        return;
+      }
+    }
+
+    if (product) {
+      window.history.pushState({ productModal: true, productId }, '');
+      setProductModalStack(prev => {
+        // Prevent duplicate push if already top of stack
+        if (prev.length && prev[prev.length - 1].id === product.id) return prev;
+        return [...prev, product];
+      });
+    }
+  }, [products]);
+
+  // Handle modal close/back (just trigger history back)
+  const handleProductModalBack = useCallback(() => {
+    window.history.back();
+  }, []);
+
+  // When opening a similar product from inside the modal
+  const handleProductSelectFromModal = useCallback((newProduct: Product) => {
+    window.history.pushState({ productModal: true, productId: newProduct.id }, '');
+    setProductModalStack(prev => {
+      // Prevent duplicate push if already top of stack
+      if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
+      return [...prev, newProduct];
+    });
+  }, []);
+
+  // Handle browser back button navigation
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      // Check if modal is open
+      if (productModalStack.length > 0) {
+        setProductModalStack(prev => {
+          if (prev.length > 0) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+      } else if (selectedSubcategory) {
+        // Clear subcategory filter
+        setSelectedSubcategory(null);
+      }
+    };
+    
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [productModalStack.length, selectedSubcategory]);
+
+  // Telegram WebApp BackButton integration
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+
+    if (productModalStack.length > 0) {
+      // Modal is open
+      tg.BackButton.show();
+      tg.BackButton.onClick(handleProductModalBack);
+    } else if (selectedSubcategory) {
+      // Subcategory filter is active
+      tg.BackButton.show();
+      tg.BackButton.onClick(() => setSelectedSubcategory(null));
+    } else {
+      // Main category view
+      tg.BackButton.show();
+      tg.BackButton.onClick(onBack);
+    }
+
+    return () => {
+      if (tg.BackButton) {
+        tg.BackButton.offClick(handleProductModalBack);
+        tg.BackButton.offClick(() => setSelectedSubcategory(null));
+        tg.BackButton.offClick(onBack);
+      }
+    };
+  }, [productModalStack.length, selectedSubcategory, handleProductModalBack, onBack]);
+
   // Scroll to top when component mounts or category changes
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -174,36 +281,6 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
       fetchCategoryProducts();
     }
   }, [category, selectedSubcategory, isMainCategory, subcategories]);
-
-  const handleProductClick = async (productId: string) => {
-    // Find the product in current list first
-    let product = products.find(p => p.id === productId);
-
-    if (!product) {
-      // If not found, fetch from Firestore (shouldn't happen in category view, but safety)
-      try {
-        const productDoc = await getDocs(query(collection(db, 'products'), where('__name__', '==', productId)));
-        if (!productDoc.empty) {
-          product = { id: productDoc.docs[0].id, ...productDoc.docs[0].data() } as Product;
-        }
-      } catch (error) {
-        console.error('Error fetching product details:', error);
-        return;
-      }
-    }
-
-    if (product) {
-      setSelectedProduct(product);
-      setShowProductDetail(true);
-    }
-  };
-
-  // Handle product selection from modal (receives full product object)
-  const handleProductSelectFromModal = (product: Product) => {
-    console.log('🔄 Product selected from modal:', product.id);
-    setSelectedProduct(product);
-    // Keep modal open to show the new product
-  };
 
   const sortedProducts = [...products].sort((a, b) => {
     switch (sortBy) {
@@ -319,7 +396,7 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
             <h3 className="text-sm font-medium text-gray-700">Shop by Category:</h3>
             {selectedSubcategory && (
               <button
-                onClick={() => setSelectedSubcategory(null)}
+                onClick={() => handleSubcategorySelect(null)}
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium"
               >
                 Clear filter
@@ -330,7 +407,7 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
             {subcategories.map((subcategory) => (
               <button
                 key={subcategory.id}
-                onClick={() => setSelectedSubcategory(
+                onClick={() => handleSubcategorySelect(
                   selectedSubcategory === subcategory.id ? null : subcategory.id
                 )}
                 className={`relative flex flex-col items-center p-3 rounded-xl border-2 transition-all duration-200 hover:shadow-md ${
@@ -416,16 +493,18 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
         </div>
       )}
 
-      {/* Product Detail Modal */}
-      <ProductDetailModal
-        isOpen={showProductDetail}
-        onClose={() => setShowProductDetail(false)}
-        onProductSelect={handleProductSelectFromModal}
-        product={selectedProduct ? {
-          ...selectedProduct,
-          price: selectedProduct.price || 0
-        } : null}
-      />
+      {/* Product Detail Modal with stack navigation */}
+      {productModalStack.length > 0 && (
+        <ProductDetailModal
+          isOpen={true}
+          product={{
+            ...productModalStack[productModalStack.length - 1],
+            price: productModalStack[productModalStack.length - 1].sellingPrice || 0
+          }}
+          onClose={handleProductModalBack}
+          onProductSelect={handleProductSelectFromModal}
+        />
+      )}
     </div>
   );
 };

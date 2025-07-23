@@ -422,6 +422,13 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
+      // Check if we're in CategoryPage with modals or subcategory filters
+      if (currentPage === 'category') {
+        // Let CategoryPage handle its own navigation (modals/subcategories)
+        // Don't interfere with its internal navigation
+        return;
+      }
+
       if (navigationStack.length <= 1) {
         // Only root left, allow Telegram to minimize/close
         return;
@@ -441,6 +448,11 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
+    // Don't manage Telegram back button for CategoryPage - let it handle its own
+    if (currentPage === 'category') {
+      return;
+    }
+
     if (navigationStack.length <= 1) {
       tg.BackButton.hide();
     } else {
@@ -452,11 +464,16 @@ const AppInner: React.FC = () => {
         tg.BackButton.offClick(handleSmartBack);
       }
     };
-  }, [navigationStack.length]);
+  }, [navigationStack.length, currentPage]);
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
+
+    // Don't manage Telegram events for CategoryPage - let it handle its own
+    if (currentPage === 'category') {
+      return;
+    }
 
     const handleTelegramBack = () => {
       if (navigationStack.length <= 1) {
@@ -472,7 +489,7 @@ const AppInner: React.FC = () => {
     return () => {
       tg.offEvent('backButtonClicked', handleTelegramBack);
     };
-  }, [navigationStack.length]);
+  }, [navigationStack.length, currentPage]);
 
   // --- UI rendering ---
   if (tgAccessError) {
