@@ -175,7 +175,7 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header with Premium Food Emoji Animation */}
-      <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-6 sticky top-0 z-10 shadow-lg relative overflow-hidden">
+<div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-6 sticky top-0 z-30 shadow-lg relative overflow-hidden">
         {/* Premium Floating Food Emojis Background Animation */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {floatingEmojis.map((emoji, index) => (
@@ -253,7 +253,10 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
         </div>
       </div>
       {/* Product Count with Premium Animation */}
-      <div className="px-4 py-3 bg-white border-b border-gray-100 relative overflow-hidden">
+      <div
+        className="px-4 py-3 bg-white border-b border-gray-100 relative overflow-hidden sticky z-20"
+        style={{ top: 88 }}
+      >
         {/* Subtle Background Pattern Animation */}
         <div className="absolute inset-0 flex items-center justify-end opacity-8">
           <div className="flex space-x-4 text-xl">
