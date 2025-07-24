@@ -29,12 +29,14 @@ interface HouseholdEssentialsPageProps {
   onBack: () => void;
   onNavigateToCategory: (category: string) => void;
   onSearchOpen: () => void;
+  setIsModalOpen?: (open: boolean) => void; // <-- Add this prop
 }
 
 const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
   onBack,
   onNavigateToCategory,
-  onSearchOpen
+  onSearchOpen,
+  setIsModalOpen
 }) => {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,6 +200,13 @@ const HouseholdEssentialsPage: React.FC<HouseholdEssentialsPageProps> = ({
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  // Notify parent (App.tsx) if modal is open or closed
+  useEffect(() => {
+    if (setIsModalOpen) {
+      setIsModalOpen(productModalStack.length > 0);
+    }
+  }, [productModalStack.length, setIsModalOpen]);
 
   // Telegram WebApp BackButton integration for modal stack
   useEffect(() => {

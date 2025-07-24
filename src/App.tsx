@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { CartProvider, useCart } from './contexts/CartContext';
 import { CartAnimationProvider, useCartAnimation } from './contexts/CartAnimationContext';
@@ -79,6 +79,12 @@ const AppInner: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [navigationStack, setNavigationStack] = useState<string[]>(['home']); // Track navigation history
+
+  // Track modal open state for dedicated category pages
+  const isDedicatedCategoryModalOpen = useRef(false);
+  const setDedicatedCategoryModalOpen = useCallback((open: boolean) => {
+    isDedicatedCategoryModalOpen.current = open;
+  }, []);
 
   // Cart count for badge
   const { cartItems } = useCart();
@@ -422,9 +428,11 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // Check if we're in CategoryPage OR dedicated category pages with modals
-      if (currentPage === 'category' || currentPage === 'dedicated-category') {
-        // Let these pages handle their own navigation (modals/subcategories)
+      // Only skip handling if a modal is open in dedicated category pages
+      if (
+        (currentPage === 'category') ||
+        (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
+      ) {
         return;
       }
 
@@ -447,8 +455,11 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
-    // Don't manage Telegram back button for CategoryPage OR dedicated category pages
-    if (currentPage === 'category' || currentPage === 'dedicated-category') {
+    // Only skip handling if a modal is open in dedicated category pages
+    if (
+      (currentPage === 'category') ||
+      (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
+    ) {
       return;
     }
 
@@ -469,8 +480,11 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
 
-    // Don't manage Telegram events for CategoryPage OR dedicated category pages
-    if (currentPage === 'category' || currentPage === 'dedicated-category') {
+    // Only skip handling if a modal is open in dedicated category pages
+    if (
+      (currentPage === 'category') ||
+      (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
+    ) {
       return;
     }
 
@@ -788,6 +802,7 @@ const AppInner: React.FC = () => {
             onBack={handleSmartBack}
             onNavigateToCategory={handleCategorySelect}
             onSearchOpen={handleSearchFocus}
+            setIsModalOpen={setDedicatedCategoryModalOpen}
           />
         )}
         
@@ -796,6 +811,7 @@ const AppInner: React.FC = () => {
             onBack={handleSmartBack}
             onNavigateToCategory={handleCategorySelect}
             onSearchOpen={handleSearchFocus}
+            setIsModalOpen={setDedicatedCategoryModalOpen}
           />
         )}
         
@@ -804,6 +820,7 @@ const AppInner: React.FC = () => {
             onBack={handleSmartBack}
             onNavigateToCategory={handleCategorySelect}
             onSearchOpen={handleSearchFocus}
+            setIsModalOpen={setDedicatedCategoryModalOpen}
           />
         )}
         
@@ -812,6 +829,7 @@ const AppInner: React.FC = () => {
             onBack={handleSmartBack}
             onNavigateToCategory={handleCategorySelect}
             onSearchOpen={handleSearchFocus}
+            setIsModalOpen={setDedicatedCategoryModalOpen}
           />
         )}
       </div>
