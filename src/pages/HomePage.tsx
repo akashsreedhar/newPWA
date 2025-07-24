@@ -291,7 +291,8 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
             }`}
             style={{
               background: 'linear-gradient(135deg, #fefce8 0%, #fef3c7 50%, #fde68a 100%)',
-              boxShadow: '0 10px 25px -3px rgba(251, 191, 36, 0.3), 0 4px 6px -2px rgba(251, 191, 36, 0.05)'
+              boxShadow: '0 10px 25px -3px rgba(251, 191, 36, 0.3), 0 4px 6px -2px rgba(251, 191, 36, 0.05)',
+              minHeight: '180px' // Ensure consistent card height
             }}
           >
             {/* Premium Animated Background Pattern */}
@@ -319,9 +320,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
               </span>
             </div>
 
-            {/* Content Container - Add margin-top to avoid badge overlap */}
-            <div className="flex items-center justify-between relative z-10 mt-8 sm:mt-10">
-              {/* Left Side - Text Content */}
+            {/* Content Container - Absolute positioning for perfect center */}
+            <div className="absolute inset-0 flex items-center justify-between px-4 sm:px-6 pt-12 sm:pt-14 pb-4 sm:pb-6 z-10">
+              {/* Left Side - Text Content with Flex Grow */}
               <div className="flex-1 pr-6">
                 <h3 className={`font-bold text-lg sm:text-xl text-gray-800 mb-1 leading-tight transition-colors duration-300 ${
                   isAutoAnimating ? 'text-gray-900' : 'group-hover:text-gray-900'
@@ -338,7 +339,12 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                 <p className={`text-xs sm:text-sm text-gray-600 mb-3 font-medium transition-colors duration-300 ${
                   isAutoAnimating ? 'text-gray-700' : 'group-hover:text-gray-700'
                 }`}>
-                  Delicious Shawarma, Alfam, Fried Chicken and more
+                 Shawarma, Alfam, Chicken and more <br />
+<span
+  className="inline-block mt-1 px-2 py-0.5 rounded-full bg-yellow-300 text-yellow-900 text-xs font-semibold shadow-sm"
+>
+  1 PM to 8 PM
+</span>
                 </p>
                 {/* Premium Animated Arrow indicator */}
                 <div className="flex items-center mt-3">
@@ -354,8 +360,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                   </div>
                 </div>
               </div>
-              {/* Right Side - Premium Image with Automatic Animation */}
-              <div className="relative">
+              
+              {/* Right Side - Perfectly Centered Image - Uses absolute centering */}
+              <div className="absolute right-4 sm:right-6 top-1/2 transform -translate-y-1/2">
                 <div className={`w-32 h-32 sm:w-36 sm:h-36 rounded-2xl overflow-hidden bg-gradient-to-br ${foodCategory.gradient} shadow-2xl flex-shrink-0 transition-all duration-700 ease-out relative ${
                   isAutoAnimating 
                     ? 'shadow-3xl scale-110 rotate-6' 
@@ -390,6 +397,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                 }`}></div>
               </div>
             </div>
+
             {/* Premium Bottom Glow Effect */}
             <div className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 w-4/5 h-2 bg-gradient-to-r from-transparent via-yellow-400 to-transparent transition-opacity duration-700 rounded-full blur-sm ${
               isAutoAnimating ? 'opacity-40' : 'opacity-0 group-hover:opacity-40'

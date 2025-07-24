@@ -37,7 +37,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
 
   // Premium food emojis for floating animation
   const floatingEmojis = ['🍕', '🍔', '🌭', '🌮', '🌯', '🥙', '🍗', '🍖', '🍟', '🥪', '🌶️', '🔥', '🥗', '🍜', '🍲', '🥘'];
-  
   // Premium header emojis for sophisticated animation
   const headerEmojis = ['🍟', '🌯', '🍗', '🌶️', '🍕'];
 
@@ -76,21 +75,19 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
     });
   }, []);
 
-  // Handle browser back button navigation
+  // Handle browser/phone back button navigation
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
+      // Only close modal if modal stack is not empty
       if (productModalStack.length > 0) {
-        // Close modal
         setProductModalStack(prev => prev.slice(0, -1));
-      } else {
-        // Go back to home
-        onBack();
+        // Do NOT call onBack here, just close modal
       }
+      // If modal stack is empty, allow parent navigation (handled by parent App)
     };
-    
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [productModalStack.length, onBack]);
+  }, [productModalStack.length]);
 
   // Telegram WebApp BackButton integration
   useEffect(() => {
@@ -169,7 +166,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
     <div className="min-h-screen bg-gray-50">
       {/* Header with Premium Food Emoji Animation */}
       <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-6 sticky top-0 z-10 shadow-lg relative overflow-hidden">
-        
         {/* Premium Floating Food Emojis Background Animation */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {floatingEmojis.map((emoji, index) => (
@@ -186,7 +182,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             </div>
           ))}
         </div>
-
         {/* Sparkling Stars Background */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {[...Array(8)].map((_, index) => (
@@ -204,7 +199,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             </div>
           ))}
         </div>
-
         <div className="flex items-center justify-between relative z-10">
           <div className="flex items-center">
             <button 
@@ -222,7 +216,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
               </div>
             </div>
           </div>
-          
           {/* Premium Animated Badge with Sophisticated Effects */}
           <div className="relative">
             <div className="flex items-center space-x-1 px-4 py-2 bg-gradient-to-r from-yellow-400/30 via-orange-400/30 to-red-400/30 backdrop-blur-sm rounded-full border border-white/20 shadow-lg">
@@ -243,26 +236,20 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             <div className="absolute inset-0 rounded-full bg-gradient-to-r from-yellow-400/20 via-orange-400/20 to-red-400/20 animate-pulse-ring-premium"></div>
           </div>
         </div>
-
         {/* Premium Multi-Layer Wave Effect */}
         <div className="absolute bottom-0 left-0 right-0">
           <div className="h-1 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 opacity-80 animate-wave-flow"></div>
           <div className="h-0.5 bg-gradient-to-r from-red-400 via-pink-400 to-purple-400 opacity-60 animate-wave-flow-reverse"></div>
         </div>
       </div>
-
       {/* Product Count with Premium Animation */}
       <div className="px-4 py-3 bg-white border-b border-gray-100 relative overflow-hidden">
-        
         {/* Subtle Background Pattern Animation */}
         <div className="absolute inset-0 flex items-center justify-end opacity-8">
           <div className="flex space-x-4 text-xl">
-            <span >🍽️</span>
-            {/* <span className="animate-gentle-pulse" style={{ animationDelay: '1s' }}>🥘</span>
-            <span className="animate-gentle-pulse" style={{ animationDelay: '2s' }}>🍲</span> */}
+            <span>🍽️</span>
           </div>
         </div>
-
         {/* Floating micro particles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {[...Array(6)].map((_, index) => (
@@ -277,7 +264,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             />
           ))}
         </div>
-
         <p className="text-sm text-gray-600 relative z-10">
           <span className="inline-flex items-center">
             <span className="mr-2 animate-gentle-bounce">🍴</span>
@@ -285,11 +271,10 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           </span>
         </p>
       </div>
-
       {/* Products Grid */}
       {products.length > 0 ? (
-        <div className="p-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+        <div className="p-2 sm:p-4">
+          <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
             {products.map(product => (
               <ProductCard
                 key={product.id}
@@ -322,7 +307,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           </button>
         </div>
       )}
-
       {/* Product Detail Modal with stack navigation */}
       {productModalStack.length > 0 && (
         <ProductDetailModal
@@ -335,9 +319,18 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           onProductSelect={handleProductSelectFromModal}
         />
       )}
-
       {/* Premium Custom CSS Animations */}
       <style jsx>{`
+        @media (max-width: 640px) {
+          .grid-cols-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 480px) {
+          .grid-cols-2, .xs\\:grid-cols-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
         @keyframes premium-float {
           0% {
             transform: translateY(120vh) translateX(0px) rotate(0deg) scale(0.8);
@@ -366,7 +359,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             opacity: 0;
           }
         }
-
         @keyframes premium-pulse {
           0%, 100% {
             transform: scale(1) rotate(0deg);
@@ -377,7 +369,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             opacity: 1;
           }
         }
-
         @keyframes twinkle {
           0%, 100% {
             opacity: 0.2;
@@ -388,7 +379,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             transform: scale(1.3) rotate(180deg);
           }
         }
-
         @keyframes pulse-ring-premium {
           0%, 100% {
             transform: scale(1);
@@ -399,7 +389,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             opacity: 0.1;
           }
         }
-
         @keyframes wave-flow {
           0% {
             transform: translateX(-100%);
@@ -408,7 +397,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             transform: translateX(100%);
           }
         }
-
         @keyframes wave-flow-reverse {
           0% {
             transform: translateX(100%);
@@ -417,7 +405,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             transform: translateX(-100%);
           }
         }
-
         @keyframes gentle-pulse {
           0%, 100% {
             opacity: 0.3;
@@ -428,7 +415,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             transform: scale(1.05);
           }
         }
-
         @keyframes gentle-bounce {
           0%, 100% {
             transform: translateY(0px);
@@ -437,7 +423,6 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             transform: translateY(-2px);
           }
         }
-
         @keyframes micro-float {
           0%, 100% {
             transform: translateY(0px) translateX(0px);
@@ -448,39 +433,30 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
             opacity: 0.3;
           }
         }
-
         .animate-premium-float {
           animation: premium-float linear infinite;
         }
-
         .animate-premium-pulse {
           animation: premium-pulse ease-in-out infinite;
         }
-
         .animate-twinkle {
           animation: twinkle ease-in-out infinite;
         }
-
         .animate-pulse-ring-premium {
           animation: pulse-ring-premium 3s ease-in-out infinite;
         }
-
         .animate-wave-flow {
           animation: wave-flow 3s linear infinite;
         }
-
         .animate-wave-flow-reverse {
           animation: wave-flow-reverse 4s linear infinite;
         }
-
         .animate-gentle-pulse {
           animation: gentle-pulse 3s ease-in-out infinite;
         }
-
         .animate-gentle-bounce {
           animation: gentle-bounce 2s ease-in-out infinite;
         }
-
         .animate-micro-float {
           animation: micro-float 4s ease-in-out infinite;
         }

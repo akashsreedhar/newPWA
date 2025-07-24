@@ -440,12 +440,13 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // Don't skip food page - let it handle its own navigation
+      // Skip ALL pages that manage their own modal navigation - INCLUDING FOOD PAGE
       if (
         (currentPage === 'category') ||
+        (currentPage === 'food') ||  // 🔥 ADDED THIS - Let FoodPage handle its own modals
         (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
       ) {
-        return;
+        return; // Let the page handle its own navigation
       }
 
       if (navigationStack.length <= 1) {
@@ -467,12 +468,13 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
-    // Don't skip food page - let it handle its own navigation
+    // Skip ALL pages that manage their own modal navigation - INCLUDING FOOD PAGE
     if (
       (currentPage === 'category') ||
+      (currentPage === 'food') ||  // 🔥 ADDED THIS - Let FoodPage handle its own navigation
       (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
     ) {
-      return;
+      return; // Let the page handle its own navigation
     }
 
     if (navigationStack.length <= 1) {
@@ -492,12 +494,13 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
 
-    // Don't skip food page - let it handle its own navigation
+    // Skip ALL pages that manage their own modal navigation - INCLUDING FOOD PAGE
     if (
       (currentPage === 'category') ||
+      (currentPage === 'food') ||  // 🔥 ADDED THIS - Let FoodPage handle its own navigation
       (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
     ) {
-      return;
+      return; // Let the page handle its own navigation
     }
 
     const handleTelegramBack = () => {
