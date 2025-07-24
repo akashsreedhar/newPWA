@@ -346,12 +346,13 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
             </div>
 
             {/* Premium Highlight Badge with Enhanced Animation - Fixed Position */}
-            <div className="absolute top-3 left-3 z-20 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg transform animate-bounce hover:animate-pulse">
-              <span className="flex items-center gap-1">
-                🔥 
-                <span className="animate-pulse">HOT!</span>
-              </span>
-            </div>
+            {/* Premium Highlight Badge - Fixed Position, No Bounce */}
+<div className="absolute top-3 left-3 z-20 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
+  <span className="flex items-center gap-1">
+    🔥 
+    <span className="">{/* No animation class here */}HOT</span>
+  </span>
+</div>
             
             {/* Content Container */}
             <div className="flex items-center justify-between relative z-10">

@@ -440,10 +440,9 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // Only skip handling if a modal is open in dedicated category pages or food page
+      // Don't skip food page - let it handle its own navigation
       if (
         (currentPage === 'category') ||
-        (currentPage === 'food') ||
         (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
       ) {
         return;
@@ -468,10 +467,9 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
-    // Only skip handling if a modal is open in dedicated category pages or food page
+    // Don't skip food page - let it handle its own navigation
     if (
       (currentPage === 'category') ||
-      (currentPage === 'food') ||
       (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
     ) {
       return;
@@ -494,10 +492,9 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
 
-    // Only skip handling if a modal is open in dedicated category pages or food page
+    // Don't skip food page - let it handle its own navigation
     if (
       (currentPage === 'category') ||
-      (currentPage === 'food') ||
       (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
     ) {
       return;
@@ -814,7 +811,7 @@ const AppInner: React.FC = () => {
         {/* Food Page Overlay */}
         {currentPage === 'food' && (
           <FoodPage 
-            onBack={() => window.history.back()}
+            onBack={handleSmartBack}
           />
         )}
 
