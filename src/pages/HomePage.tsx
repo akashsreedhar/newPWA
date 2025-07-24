@@ -9,7 +9,7 @@ import groceryKitchenImg from '../images/grocery-kitchen.jpg';
 import snacksDrinksImg from '../images/snacks-drinks.png';
 import beautyCareImg from '../images/beauty-care.jpeg';
 import householdEssentialsImg from '../images/household-essentials.png';
-import foodImg from '../images/food-category.png'; // <-- Add your image to images folder
+import foodImg from '../images/food-category.png';
 
 interface Product {
   id: string;
@@ -18,9 +18,9 @@ interface Product {
   name_manglish?: string;
   name?: string;
   category?: string;
-  price?: number; // Optional legacy field
-  mrp: number; // Required - Maximum Retail Price
-  sellingPrice: number; // Required - Actual selling price
+  price?: number;
+  mrp: number;
+  sellingPrice: number;
   imageUrl?: string;
   available?: boolean;
   description?: string;
@@ -34,11 +34,7 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Use a stack for product modal navigation
   const [productModalStack, setProductModalStack] = useState<Product[]>([]);
-
-  // Auto-animation states
   const [isAutoAnimating, setIsAutoAnimating] = useState(false);
   const foodCardRef = useRef<HTMLDivElement>(null);
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -46,7 +42,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
 
   const { settings: productLanguageSettings } = useProductLanguage();
 
-  // Helper function to get category display name based on user's language preference
   const getCategoryDisplayName = (category: any) => {
     const { mode } = productLanguageSettings;
     if (mode === 'single') {
@@ -59,40 +54,36 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
           return category.name;
       }
     } else if (mode === 'english-malayalam') {
-      return category.name; // Primary: English
+      return category.name;
     } else if (mode === 'english-manglish') {
-      return category.name; // Primary: English
+      return category.name;
     }
-    return category.name; // Default fallback
+    return category.name;
   };
 
   const getCategorySecondaryName = (category: any) => {
     const { mode } = productLanguageSettings;
     if (mode === 'single') {
-      return null; // No secondary name in single mode
+      return null;
     } else if (mode === 'english-manglish') {
-      return category.manglishName; // Secondary: Manglish
+      return category.manglishName;
     }
-    return null; // Default fallback
+    return null;
   };
 
-  // Auto-animation function
   const triggerAutoAnimation = useCallback(() => {
     setIsAutoAnimating(true);
     setTimeout(() => {
       setIsAutoAnimating(false);
-    }, 2000); // Animation lasts 2 seconds
+    }, 2000);
   }, []);
 
-  // Set up Intersection Observer for when Food section comes into view
   useEffect(() => {
     if (!foodCardRef.current) return;
-
     observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
-            // Trigger animation when 50% of the card is visible
             triggerAutoAnimation();
           }
         });
@@ -102,9 +93,7 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
         rootMargin: '0px'
       }
     );
-
     observerRef.current.observe(foodCardRef.current);
-
     return () => {
       if (observerRef.current) {
         observerRef.current.disconnect();
@@ -112,19 +101,14 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     };
   }, [triggerAutoAnimation]);
 
-  // Auto-animation on page load and periodic animation
   useEffect(() => {
     if (!loading) {
-      // Initial animation after page load
       const initialTimer = setTimeout(() => {
         triggerAutoAnimation();
-      }, 1000); // 1 second after page loads
-
-      // Periodic animation every 10 seconds
+      }, 1000);
       animationIntervalRef.current = setInterval(() => {
         triggerAutoAnimation();
       }, 10000);
-
       return () => {
         clearTimeout(initialTimer);
         if (animationIntervalRef.current) {
@@ -134,7 +118,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   }, [loading, triggerAutoAnimation]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (animationIntervalRef.current) {
@@ -171,40 +154,31 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   };
 
-  // Open product detail modal (push to stack and history)
   const handleProductClick = useCallback((productId: string) => {
     const product = products.find(p => p.id === productId);
     if (product) {
-      // Always push to history first
       window.history.pushState({ productModal: true, productId }, '');
       setProductModalStack(prev => {
-        // Prevent duplicate push if already top of stack
         if (prev.length && prev[prev.length - 1].id === product.id) return prev;
         return [...prev, product];
       });
     }
   }, [products]);
 
-  // Handle modal close/back (just trigger history back)
   const handleProductModalBack = useCallback(() => {
     window.history.back();
   }, []);
 
-  // When opening a similar product from inside the modal
   const handleProductSelectFromModal = useCallback((newProduct: Product) => {
-    // Always push to history first
     window.history.pushState({ productModal: true, productId: newProduct.id }, '');
     setProductModalStack(prev => {
-      // Prevent duplicate push if already top of stack
       if (prev.length && prev[prev.length - 1].id === newProduct.id) return prev;
       return [...prev, newProduct];
     });
   }, []);
 
-  // Listen for browser back button and handle modal stack properly
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // Only pop the stack, don't manipulate history further
       setProductModalStack(prev => {
         if (prev.length > 0) {
           return prev.slice(0, -1);
@@ -212,16 +186,13 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
         return prev;
       });
     };
-    
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  // Telegram WebApp BackButton integration for modal stack
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
-
     if (productModalStack.length > 0) {
       tg.BackButton.show();
       tg.BackButton.onClick(handleProductModalBack);
@@ -236,7 +207,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     };
   }, [productModalStack.length, handleProductModalBack]);
 
-  // Separate Food category (featured at top)
   const foodCategory = {
     name: 'Food',
     malayalamName: 'ഭക്ഷണം',
@@ -247,7 +217,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     subcategories: ['Fast Food']
   };
 
-  // Other main categories (in 2x2 grid)
   const otherCategories = [
     {
       name: 'Grocery & Kitchen',
@@ -290,7 +259,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     }
   ];
 
-  // Filter out unavailable products for display
   const availableProducts = products.filter(p => p.available !== false);
 
   if (loading) {
@@ -306,7 +274,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
       {/* Banner */}
       <div className="bg-gradient-to-r from-teal-600 to-blue-600 text-white p-3 sm:p-4 mx-3 sm:mx-4 mt-3 sm:mt-4 rounded-xl">
         <h2 className="text-base sm:text-lg font-semibold leading-tight">Welcome to Safari Cheemeni</h2>
-        {/* <p className="text-xs sm:text-sm opacity-90 mt-1">Free delivery on orders above ₹500</p> */}
       </div>
 
       {/* Main Categories Section */}
@@ -345,17 +312,15 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
               <div className="absolute bottom-6 right-8 w-1.5 h-1.5 bg-yellow-300 rounded-full opacity-70 animate-ping delay-700"></div>
             </div>
 
-            {/* Premium Highlight Badge with Enhanced Animation - Fixed Position */}
-            {/* Premium Highlight Badge - Fixed Position, No Bounce */}
-<div className="absolute top-3 left-3 z-20 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
-  <span className="flex items-center gap-1">
-    🔥 
-    <span className="">{/* No animation class here */}HOT</span>
-  </span>
-</div>
-            
-            {/* Content Container */}
-            <div className="flex items-center justify-between relative z-10">
+            {/* Premium Highlight Badge - Fixed Top-Left, No Overlap */}
+            <div className="absolute z-20 left-3 sm:left-4 top-3 sm:top-4 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg select-none pointer-events-none">
+              <span className="flex items-center gap-1">
+                🔥 <span>HOT</span>
+              </span>
+            </div>
+
+            {/* Content Container - Add margin-top to avoid badge overlap */}
+            <div className="flex items-center justify-between relative z-10 mt-8 sm:mt-10">
               {/* Left Side - Text Content */}
               <div className="flex-1 pr-6">
                 <h3 className={`font-bold text-lg sm:text-xl text-gray-800 mb-1 leading-tight transition-colors duration-300 ${
@@ -389,7 +354,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                   </div>
                 </div>
               </div>
-              
               {/* Right Side - Premium Image with Automatic Animation */}
               <div className="relative">
                 <div className={`w-32 h-32 sm:w-36 sm:h-36 rounded-2xl overflow-hidden bg-gradient-to-br ${foodCategory.gradient} shadow-2xl flex-shrink-0 transition-all duration-700 ease-out relative ${
@@ -413,13 +377,11 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                       ? 'opacity-30 translate-x-full' 
                       : 'opacity-0 group-hover:opacity-30 group-hover:translate-x-full'
                   }`}></div>
-                  
                   {/* Premium Glow Ring */}
                   <div className={`absolute -inset-1 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 rounded-2xl transition-opacity duration-500 blur-sm ${
                     isAutoAnimating ? 'opacity-20' : 'opacity-0 group-hover:opacity-20'
                   }`}></div>
                 </div>
-                
                 {/* Floating Ring Animation */}
                 <div className={`absolute inset-0 rounded-2xl border-2 border-yellow-400 transition-all duration-700 ease-out ${
                   isAutoAnimating 
@@ -428,12 +390,10 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                 }`}></div>
               </div>
             </div>
-
             {/* Premium Bottom Glow Effect */}
             <div className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 w-4/5 h-2 bg-gradient-to-r from-transparent via-yellow-400 to-transparent transition-opacity duration-700 rounded-full blur-sm ${
               isAutoAnimating ? 'opacity-40' : 'opacity-0 group-hover:opacity-40'
             }`}></div>
-            
             {/* Premium Side Accent Lines */}
             <div className={`absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-16 bg-gradient-to-b from-yellow-400 to-orange-500 transition-opacity duration-500 rounded-r ${
               isAutoAnimating ? 'opacity-60' : 'opacity-0 group-hover:opacity-60'
@@ -459,7 +419,6 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
                   alt={category.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   onError={(e) => {
-                    // Fallback to gradient background if image fails
                     e.currentTarget.style.display = 'none';
                   }}
                 />

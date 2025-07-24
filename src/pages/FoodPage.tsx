@@ -257,9 +257,9 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
         {/* Subtle Background Pattern Animation */}
         <div className="absolute inset-0 flex items-center justify-end opacity-8">
           <div className="flex space-x-4 text-xl">
-            <span className="animate-gentle-pulse">🍽️</span>
-            <span className="animate-gentle-pulse" style={{ animationDelay: '1s' }}>🥘</span>
-            <span className="animate-gentle-pulse" style={{ animationDelay: '2s' }}>🍲</span>
+            <span >🍽️</span>
+            {/* <span className="animate-gentle-pulse" style={{ animationDelay: '1s' }}>🥘</span>
+            <span className="animate-gentle-pulse" style={{ animationDelay: '2s' }}>🍲</span> */}
           </div>
         </div>
 
