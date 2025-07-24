@@ -10,6 +10,35 @@ import { useCart } from '../contexts/CartContext';
 import { validateCartPricesAdvanced } from '../utils/advancedPriceValidation';
 import { PriceValidationAnalytics, PriceValidationErrorTracker } from '../utils/priceValidationAnalytics';
 
+interface Product {
+  id: string;
+  name_en?: string;
+  name_ml?: string;
+  name_manglish?: string;
+  name?: string;
+  category?: string;
+  price?: number;
+  mrp?: number;
+  sellingPrice?: number;
+  imageUrl?: string;
+  available?: boolean;
+  description?: string;
+  netQuantity?: string;
+  manufacturerNameAddress?: string;
+  countryOfOrigin?: string;
+  customerSupportDetails?: string;
+  // Fast Food specific fields
+  fssaiLicenseNumber?: string;
+  ingredients?: string;
+  allergens?: string;
+  servingSize?: string;
+  preparationDate?: string;
+  bestBefore?: string;
+  storageInstructions?: string;
+  isVeg?: boolean;
+  spiceLevel?: 'mild' | 'medium' | 'spicy';
+}
+
 interface CartPageProps {
   userId: string | null;
   accessError?: string;

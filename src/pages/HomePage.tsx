@@ -25,6 +25,19 @@ interface Product {
   available?: boolean;
   description?: string;
   netQuantity?: string;
+  manufacturerNameAddress?: string;
+  countryOfOrigin?: string;
+  customerSupportDetails?: string;
+  // Fast Food specific fields
+  fssaiLicenseNumber?: string;
+  ingredients?: string;
+  allergens?: string;
+  servingSize?: string;
+  preparationDate?: string;
+  bestBefore?: string;
+  storageInstructions?: string;
+  isVeg?: boolean;
+  spiceLevel?: 'mild' | 'medium' | 'spicy';
 }
 
 interface HomePageProps {
@@ -466,6 +479,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
               sellingPrice={item.sellingPrice}
               imageUrl={item.imageUrl}
               netQuantity={item.netQuantity}
+              category={item.category}
+              isVeg={item.isVeg}
+              spiceLevel={item.spiceLevel}
               onProductClick={handleProductClick}
             />
           ))}
@@ -487,6 +503,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
               sellingPrice={item.sellingPrice || 0}
               imageUrl={item.imageUrl}
               netQuantity={item.netQuantity}
+              category={item.category}
+              isVeg={item.isVeg}
+              spiceLevel={item.spiceLevel}
               onProductClick={handleProductClick}
             />
           ))}

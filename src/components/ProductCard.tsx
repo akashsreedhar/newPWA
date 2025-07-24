@@ -21,6 +21,9 @@ interface ProductCardProps {
   netQuantity?: string;
   onProductClick?: (productId: string) => void;
   available?: boolean; // <-- Add available prop for robust UI
+  category?: string; // For Fast Food detection
+  isVeg?: boolean; // For Fast Food veg/non-veg
+  spiceLevel?: 'mild' | 'medium' | 'spicy'; // For Fast Food spice level
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({
@@ -35,7 +38,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
   imageUrl,
   netQuantity,
   onProductClick,
-  available = true // default to true for backward compatibility
+  available = true, // default to true for backward compatibility
+  category,
+  isVeg,
+  spiceLevel
 }) => {
   const { t } = useLanguage();
   const { cartItems, addToCart, updateQuantity } = useCart();
@@ -50,6 +56,9 @@ const ProductCard: React.FC<ProductCardProps> = ({
   const finalSellingPrice = sellingPrice || mrp || 0;
   const hasOffer = finalMrp > 0 && finalSellingPrice > 0 && finalMrp > finalSellingPrice;
   const discountPercentage = hasOffer ? Math.round(((finalMrp - finalSellingPrice) / finalMrp) * 100) : 0;
+
+  // Check if this is a Fast Food product
+  const isFastFood = category === "Fast Food";
 
   // PATCH: Always check latest availability before adding to cart
   const handleAddToCart = async () => {
@@ -122,6 +131,32 @@ const ProductCard: React.FC<ProductCardProps> = ({
           <span className="bg-gradient-to-r from-green-500 to-green-600 text-white text-xs px-2.5 py-1 rounded-full font-bold shadow-md">
             {discountPercentage}% OFF
           </span>
+        </div>
+      )}
+
+      {/* Fast Food Veg/Non-Veg and Spice Level Indicators - Top Left */}
+      {isFastFood && (
+        <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
+          {/* Veg/Non-Veg Symbol */}
+          {isVeg !== undefined && (
+            <div className={`w-5 h-5 border-2 flex items-center justify-center ${
+              isVeg ? 'border-green-600' : 'border-red-600'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                isVeg ? 'bg-green-600' : 'bg-red-600'
+              }`}></div>
+            </div>
+          )}
+          {/* Spice Level Indicator */}
+          {spiceLevel && (
+            <div className="bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-full shadow-sm">
+              <span className="text-xs font-bold">
+                {spiceLevel === 'mild' && '🌶'}
+                {spiceLevel === 'medium' && '🌶🌶'}
+                {spiceLevel === 'spicy' && '🌶🌶🌶'}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

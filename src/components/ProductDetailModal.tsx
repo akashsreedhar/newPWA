@@ -28,6 +28,16 @@ interface ProductDetailModalProps {
     countryOfOrigin?: string;
     customerSupportDetails?: string;
     available?: boolean;
+    // Fast Food specific fields
+    fssaiLicenseNumber?: string;
+    ingredients?: string;
+    allergens?: string;
+    servingSize?: string;
+    preparationDate?: string;
+    bestBefore?: string;
+    storageInstructions?: string;
+    isVeg?: boolean;
+    spiceLevel?: 'mild' | 'medium' | 'spicy';
   } | null;
 }
 
@@ -139,6 +149,9 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
   const finalMrp = product.mrp || 0;
   const finalSellingPrice = product.sellingPrice || 0;
 
+  // Check if this is a Fast Food product
+  const isFastFood = product.category === "Fast Food";
+
   const handleAddToCart = () => {
     const productName = formatProductName({
       name: product.name_en || product.name || '',
@@ -215,6 +228,49 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
 
           {/* Product Info */}
           <div className="p-4 space-y-6 pb-24">{/* Added pb-24 for bottom navigation space */}
+            {/* Fast Food Veg/Non-Veg and Spice Level */}
+{isFastFood && (
+  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+    <div className="flex items-center justify-between mb-3">
+      <h3 className="text-sm font-bold text-black flex items-center">
+        🍽️ Fast Food Information
+      </h3>
+      {product.isVeg !== undefined && (
+        <div
+          className={`w-6 h-6 border-2 flex items-center justify-center ${
+            product.isVeg ? 'border-green-600' : 'border-red-600'
+          }`}
+        >
+          <div
+            className={`w-3 h-3 rounded-full ${
+              product.isVeg ? 'bg-green-600' : 'bg-red-600'
+            }`}
+          ></div>
+        </div>
+      )}
+    </div>
+    <div className="grid grid-cols-2 gap-3 text-xs">
+      {product.isVeg !== undefined && (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-black">Type:</span>
+          <span className={`font-bold text-black`}>
+            {product.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}
+          </span>
+        </div>
+      )}
+      {product.spiceLevel && (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-black">Spice:</span>
+          <span className="font-bold text-black">
+            {product.spiceLevel === 'mild' && '🌶 Mild'}
+            {product.spiceLevel === 'medium' && '🌶🌶 Medium'}
+            {product.spiceLevel === 'spicy' && '🌶🌶🌶 Spicy'}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+)}
             {/* Name and Price */}
             <div>
               <h1 className="text-xl font-semibold text-gray-900 leading-tight">{displayName}</h1>
@@ -302,6 +358,80 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
               </div>
             )}
 
+            {/* Fast Food Safety Information - Only for Fast Food */}
+            {isFastFood && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-4">
+                <h3 className="text-lg font-semibold text-gray-900 border-b border-yellow-200 pb-2 flex items-center">
+                  🛡️ Food Safety Information
+                </h3>
+                <div className="space-y-3">
+                  {product.fssaiLicenseNumber && (
+                    <div className="flex items-start justify-between py-2 border-b border-yellow-100 last:border-b-0">
+                      <span className="text-sm font-medium text-gray-600 flex items-center">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-3 mt-1"></div>
+                        FSSAI License
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900 text-right max-w-48">{product.fssaiLicenseNumber}</span>
+                    </div>
+                  )}
+                  {product.ingredients && (
+                    <div className="py-2 border-b border-yellow-100 last:border-b-0">
+                      <span className="text-sm font-medium text-gray-600 flex items-center mb-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                        Ingredients
+                      </span>
+                      <p className="text-sm text-gray-900 ml-5 leading-relaxed">{product.ingredients}</p>
+                    </div>
+                  )}
+                  {product.allergens && (
+                    <div className="py-2 border-b border-yellow-100 last:border-b-0">
+                      <span className="text-sm font-medium text-gray-600 flex items-center mb-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full mr-3"></div>
+                        Allergen Information
+                      </span>
+                      <p className="text-sm text-gray-900 ml-5 leading-relaxed">{product.allergens}</p>
+                    </div>
+                  )}
+                  {product.servingSize && (
+                    <div className="flex items-center justify-between py-2 border-b border-yellow-100 last:border-b-0">
+                      <span className="text-sm font-medium text-gray-600 flex items-center">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full mr-3"></div>
+                        Serving Size
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900">{product.servingSize}</span>
+                    </div>
+                  )}
+                  <div className="py-2 border-b border-yellow-100 last:border-b-0">
+                    <span className="text-sm font-medium text-gray-600 flex items-center mb-2">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full mr-3"></div>
+                      Preparation
+                    </span>
+                    <p className="text-sm text-gray-900 ml-5 leading-relaxed">
+                      {product.preparationDate || "Fresh on order"}
+                    </p>
+                  </div>
+                  <div className="py-2 border-b border-yellow-100 last:border-b-0">
+                    <span className="text-sm font-medium text-gray-600 flex items-center mb-2">
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full mr-3"></div>
+                      Best Before
+                    </span>
+                    <p className="text-sm text-gray-900 ml-5 leading-relaxed">
+                      {product.bestBefore || "Consume within 2 hours of preparation"}
+                    </p>
+                  </div>
+                  <div className="py-2">
+                    <span className="text-sm font-medium text-gray-600 flex items-center mb-2">
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full mr-3"></div>
+                      Storage Instructions
+                    </span>
+                    <p className="text-sm text-gray-900 ml-5 leading-relaxed">
+                      {product.storageInstructions || "Serve hot, Refrigerate leftovers within 1 hour"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Product Details */}
             <div className="bg-gray-50 rounded-xl p-4 space-y-4">
               <h3 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-2">Product Information</h3>
@@ -374,6 +504,9 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                       sellingPrice={similarProduct.sellingPrice || 0}
                       imageUrl={similarProduct.imageUrl}
                       netQuantity={similarProduct.netQuantity}
+                      category={similarProduct.category}
+                      isVeg={similarProduct.isVeg}
+                      spiceLevel={similarProduct.spiceLevel}
                       onProductClick={handleSimilarProductClick}
                     />
                   ))}

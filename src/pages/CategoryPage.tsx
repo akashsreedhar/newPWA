@@ -23,6 +23,16 @@ interface Product {
   manufacturerNameAddress?: string;
   countryOfOrigin?: string;
   customerSupportDetails?: string;
+  // Fast Food specific fields
+  fssaiLicenseNumber?: string;
+  ingredients?: string;
+  allergens?: string;
+  servingSize?: string;
+  preparationDate?: string;
+  bestBefore?: string;
+  storageInstructions?: string;
+  isVeg?: boolean;
+  spiceLevel?: 'mild' | 'medium' | 'spicy';
 }
 
 interface CategoryPageProps {
@@ -481,6 +491,9 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
                 sellingPrice={product.sellingPrice}
                 imageUrl={product.imageUrl}
                 netQuantity={product.netQuantity}
+                category={product.category}
+                isVeg={product.isVeg}
+                spiceLevel={product.spiceLevel}
                 onProductClick={handleProductClick}
               />
             ))}

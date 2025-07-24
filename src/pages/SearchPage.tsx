@@ -20,6 +20,18 @@ interface Product {
   description?: string;
   netQuantity?: string;
   manufacturerNameAddress?: string;
+  countryOfOrigin?: string;
+  customerSupportDetails?: string;
+  // Fast Food specific fields
+  fssaiLicenseNumber?: string;
+  ingredients?: string;
+  allergens?: string;
+  servingSize?: string;
+  preparationDate?: string;
+  bestBefore?: string;
+  storageInstructions?: string;
+  isVeg?: boolean;
+  spiceLevel?: 'mild' | 'medium' | 'spicy';
 }
 
 interface SearchPageProps {
@@ -189,6 +201,8 @@ const generateSuggestions = (products: Product[], query: string): string[] => {
 
 const CATEGORIES = [
   'All',
+  // Fast Food category
+  'Fast Food',
   // Grocery & Kitchen
   'Fruits and Vegetables',
   'Rice, Atta & Dal',
@@ -294,7 +308,7 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
   // Popular search suggestions
   const popularSearches = [
     'Rice', 'Onion', 'Potato', 'Tomato', 'Milk', 'Bread', 'Oil', 'Sugar',
-    'Basmati Rice', 'Coconut Oil', 'Ghee', 'Dal', 'Atta', 'Masala'
+    'Basmati Rice', 'Coconut Oil', 'Ghee', 'Dal', 'Atta', 'Masala', 'Shawarma', 'Alfam'
   ];
 
   const handleSearch = (query: string) => {
@@ -542,6 +556,9 @@ const SearchPage: React.FC<SearchPageProps> = ({ onBack, initialQuery = '' }) =>
                     sellingPrice={product.sellingPrice || 0}
                     imageUrl={product.imageUrl}
                     netQuantity={product.netQuantity}
+                    category={product.category}
+                    isVeg={product.isVeg}
+                    spiceLevel={product.spiceLevel}
                     onProductClick={handleProductClick}
                   />
                 ))}

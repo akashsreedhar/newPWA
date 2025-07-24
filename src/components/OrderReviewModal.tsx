@@ -6,6 +6,35 @@ import { useCart } from '../contexts/CartContext';
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 
+interface Product {
+  id: string;
+  name_en?: string;
+  name_ml?: string;
+  name_manglish?: string;
+  name?: string;
+  category?: string;
+  price?: number;
+  mrp?: number;
+  sellingPrice?: number;
+  imageUrl?: string;
+  available?: boolean;
+  description?: string;
+  netQuantity?: string;
+  manufacturerNameAddress?: string;
+  countryOfOrigin?: string;
+  customerSupportDetails?: string;
+  // Fast Food specific fields
+  fssaiLicenseNumber?: string;
+  ingredients?: string;
+  allergens?: string;
+  servingSize?: string;
+  preparationDate?: string;
+  bestBefore?: string;
+  storageInstructions?: string;
+  isVeg?: boolean;
+  spiceLevel?: 'mild' | 'medium' | 'spicy';
+}
+
 interface OrderReviewModalProps {
   open: boolean;
   onClose: () => void;
@@ -371,9 +400,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               confettiTimeout.current = setTimeout(() => {
                 setStep('checkmark');
                 checkmarkTimeout.current = setTimeout(() => {
-                 if (onNavigateToOrders) onNavigateToOrders();
-  if (onClearCart) onClearCart();
-  if (onClose) onClose();
+                  if (onNavigateToOrders) onNavigateToOrders();
+                  if (onClearCart) onClearCart();
+                  if (onClose) onClose();
 
                   redirectTimeout.current = setTimeout(() => {
                     setStep('idle');
@@ -482,9 +511,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             confettiTimeout.current = setTimeout(() => {
               setStep('checkmark');
               checkmarkTimeout.current = setTimeout(() => {
-               if (onNavigateToOrders) onNavigateToOrders();
-  if (onClearCart) onClearCart();
-  if (onClose) onClose();
+                if (onNavigateToOrders) onNavigateToOrders();
+                if (onClearCart) onClearCart();
+                if (onClose) onClose();
                 redirectTimeout.current = setTimeout(() => {
                   setStep('idle');
                   setOrderPlaced(false);
