@@ -12,6 +12,7 @@ import OrdersPage from './pages/OrdersPage';
 import AccountPage from './pages/AccountPage';
 import SearchPage from './pages/SearchPage';
 import CategoryPage from './pages/CategoryPage';
+import FoodPage from './pages/FoodPage';
 import GroceryKitchenPage from './pages/GroceryKitchenPage';
 import SnacksDrinksPage from './pages/SnacksDrinksPage';
 import BeautyPersonalCarePage from './pages/BeautyPersonalCarePage';
@@ -75,7 +76,7 @@ const AppInner: React.FC = () => {
   const [userName, setUserName] = useState<string | null>(null);
 
   // Navigation state for pages
-  const [currentPage, setCurrentPage] = useState<'home' | 'search' | 'category' | 'dedicated-category' | 'cart' | 'orders' | 'account'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'search' | 'category' | 'food' | 'dedicated-category' | 'cart' | 'orders' | 'account'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [navigationStack, setNavigationStack] = useState<string[]>(['home']); // Track navigation history
@@ -165,6 +166,8 @@ const AppInner: React.FC = () => {
       setSearchQuery('');
     } else if (previousPage === 'search') {
       setCurrentPage('search');
+    } else if (previousPage === 'food') {
+      setCurrentPage('food');
     } else if (previousPage.startsWith('dedicated-category:')) {
       const category = previousPage.replace('dedicated-category:', '');
       setCurrentPage('dedicated-category');
@@ -179,6 +182,15 @@ const AppInner: React.FC = () => {
 
   const handleCategorySelect = (category: string) => {
     setSelectedCategory(category);
+    
+    // Handle Food category specially
+    if (category === 'Food') {
+      setCurrentPage('food');
+      setNavigationStack(prev => [...prev, 'food']);
+      window.history.pushState({ view: 'food' }, '');
+      return;
+    }
+    
     const mainCategories = ['Grocery & Kitchen', 'Snacks & Drinks', 'Beauty & Personal Care', 'Household Essentials'];
     const newPage = mainCategories.includes(category) ? 'dedicated-category' : 'category';
     setCurrentPage(newPage);
@@ -428,9 +440,10 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
-      // Only skip handling if a modal is open in dedicated category pages
+      // Only skip handling if a modal is open in dedicated category pages or food page
       if (
         (currentPage === 'category') ||
+        (currentPage === 'food') ||
         (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
       ) {
         return;
@@ -455,9 +468,10 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || !tg.BackButton) return;
 
-    // Only skip handling if a modal is open in dedicated category pages
+    // Only skip handling if a modal is open in dedicated category pages or food page
     if (
       (currentPage === 'category') ||
+      (currentPage === 'food') ||
       (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
     ) {
       return;
@@ -480,9 +494,10 @@ const AppInner: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg || typeof tg.onEvent !== 'function') return;
 
-    // Only skip handling if a modal is open in dedicated category pages
+    // Only skip handling if a modal is open in dedicated category pages or food page
     if (
       (currentPage === 'category') ||
+      (currentPage === 'food') ||
       (currentPage === 'dedicated-category' && isDedicatedCategoryModalOpen.current)
     ) {
       return;
@@ -793,6 +808,13 @@ const AppInner: React.FC = () => {
           <CategoryPage 
             category={selectedCategory}
             onBack={handleSmartBack}
+          />
+        )}
+
+        {/* Food Page Overlay */}
+        {currentPage === 'food' && (
+          <FoodPage 
+            onBack={() => window.history.back()}
           />
         )}
 

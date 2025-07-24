@@ -42,7 +42,7 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
   
   const { settings } = useProductLanguage();
 
-  // Corrected category system - subcategories with multilingual support
+  // Updated category system with Fast Food included - Food category now directly shows Fast Food products
   const categoryMapping: { [key: string]: Array<{
     id: string;
     name_en: string;
@@ -241,6 +241,15 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
             id: doc.id,
             ...doc.data()
           } as Product));
+        } else if (category === 'Food') {
+          // Special case: Food category directly shows Fast Food products
+          console.log('📂 Food category detected, fetching Fast Food products directly');
+          const q = query(collection(db, 'products'), where('category', '==', 'Fast Food'));
+          const snap = await getDocs(q);
+          fetchedProducts = snap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          } as Product));
         } else if (isMainCategory) {
           // This is a main category, fetch products from all subcategories
           console.log('📂 Main category detected, fetching from subcategories:', subcategories.map(s => s.id));
@@ -307,8 +316,8 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
           </div>
         </div>
 
-        {/* Subcategory Skeleton for Main Categories */}
-        {isMainCategory && subcategories.length > 0 && (
+        {/* Subcategory Skeleton for Main Categories - Hidden for Food category */}
+        {isMainCategory && subcategories.length > 0 && category !== 'Food' && (
           <div className="bg-white border-b border-gray-100 px-4 py-4">
             <div className="flex items-center space-x-2 mb-3">
               <h3 className="text-sm font-medium text-gray-700">Shop by Category:</h3>
@@ -389,8 +398,8 @@ const CategoryPage: React.FC<CategoryPageProps> = ({ category, onBack }) => {
         )}
       </div>
 
-      {/* Subcategory Selector for Main Categories */}
-      {isMainCategory && subcategories.length > 0 && (
+      {/* Subcategory Selector for Main Categories - Hidden for Food category */}
+      {isMainCategory && subcategories.length > 0 && category !== 'Food' && (
         <div className="bg-white border-b border-gray-100 px-4 py-4">
           <div className="flex items-center space-x-2 mb-3">
             <h3 className="text-sm font-medium text-gray-700">Shop by Category:</h3>
