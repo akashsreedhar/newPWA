@@ -386,6 +386,7 @@ const CartPage: React.FC<CartPageProps> = ({
     message: string; 
     paymentMethod: 'cod' | 'online';
     paymentData?: any;
+    cartItems?: any[];
   }) => {
     if (placingOrder) return;
     if (!userId || accessError || !address) {
@@ -413,7 +414,8 @@ const CartPage: React.FC<CartPageProps> = ({
         name: item.name,
         price: item.price,
         quantity: item.quantity,
-        total: item.price * item.quantity
+        total: item.price * item.quantity,
+        category: item.category
       })),
       total: getCartTotal(),
       address,
@@ -434,7 +436,7 @@ const CartPage: React.FC<CartPageProps> = ({
       notified: false,
       orderNumber: `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`
     };
-
+console.log("Creating order with items:", order.items);
     try {
       await addDoc(collection(db, 'orders'), order);
     } catch (err) {

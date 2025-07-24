@@ -39,7 +39,7 @@ interface OrderReviewModalProps {
   open: boolean;
   onClose: () => void;
   cartItems: any[];
-  onPlaceOrder: (order: { address: any; message: string; paymentMethod: 'cod' | 'online'; paymentData?: any; customerName?: string; customerPhone?: string }) => void;
+  onPlaceOrder: (order: { address: any; message: string; paymentMethod: 'cod' | 'online'; paymentData?: any; customerName?: string; customerPhone?: string; cartItems?: any[] }) => void;
   onClearCart?: () => void;
   onNavigateToOrders?: () => void;
   userId?: string | null;
@@ -66,6 +66,9 @@ function useUser(userId?: string | null) {
 
   return user;
 }
+
+// Product categories cache to reduce Firebase reads
+const productCategoriesCache = new Map<string, string>();
 
 const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   open,
@@ -377,6 +380,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               setProcessingPayment(false);
               setVerifyingPayment(false);
 
+              // Enrich cart items with category (if not already present)
+              const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
+
               // Place order with payment data
               if (onPlaceOrder) {
                 onPlaceOrder({
@@ -385,6 +391,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   paymentMethod: 'online',
                   customerName: user?.name,
                   customerPhone: user?.phone,
+                  cartItems: enrichedCartItems,
                   paymentData: {
                     razorpayOrderId: response.razorpay_order_id,
                     razorpayPaymentId: response.razorpay_payment_id,
@@ -448,6 +455,43 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     }
   };
 
+  // Function to enrich cart items with category information
+  const enrichCartItemsWithCategory = async (items: any[]) => {
+    // Clone the cart items to avoid modifying the originals
+    const enrichedItems = [...items];
+    
+    // Process items in parallel with Promise.all for efficiency
+    await Promise.all(
+      enrichedItems.map(async (item) => {
+        // Skip if the item already has a category
+        if (item.category) return;
+        
+        // Check the cache first to avoid Firebase reads
+        if (productCategoriesCache.has(item.id)) {
+          item.category = productCategoriesCache.get(item.id);
+          return;
+        }
+        
+        // If not in cache, fetch from Firebase
+        try {
+          const docSnap = await getDoc(doc(db, "products", item.id));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Store category in the item
+            item.category = data.category || '';
+            // Cache for future use
+            productCategoriesCache.set(item.id, item.category);
+          }
+        } catch (error) {
+          console.error(`Failed to fetch category for product ${item.id}:`, error);
+          // Continue even if we couldn't get the category
+        }
+      })
+    );
+    
+    return enrichedItems;
+  };
+
   // Handle place order
   const handlePlaceOrder = async () => {
     setError(null);
@@ -495,15 +539,20 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
 
           if (!orderPlaced) {
             setOrderPlaced(true);
-            if (onPlaceOrder) {
-              onPlaceOrder({
-                address: selectedAddress,
-                message,
-                paymentMethod: 'cod',
-                customerName: user?.name,
-                customerPhone: user?.phone,
-              });
-            }
+
+            // Enrich cart items with category information
+            enrichCartItemsWithCategory(cartItems).then(enrichedItems => {
+              if (onPlaceOrder) {
+                onPlaceOrder({
+                  address: selectedAddress,
+                  message,
+                  paymentMethod: 'cod',
+                  customerName: user?.name,
+                  customerPhone: user?.phone,
+                  cartItems: enrichedItems,
+                });
+              }
+            });
           }
 
           setTimeout(() => {
