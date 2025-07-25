@@ -419,7 +419,7 @@ const CartPage: React.FC<CartPageProps> = ({
       })),
       total: getCartTotal(),
       address,
-      message: message?.trim() || null,
+      specialInstructions: message?.trim() || null,
       status: 'pending',
       paymentMethod,
       ...(paymentMethod === 'online' && paymentData ? {
