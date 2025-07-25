@@ -9,6 +9,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { validateCartPricesAdvanced } from '../utils/advancedPriceValidation';
 import { PriceValidationAnalytics, PriceValidationErrorTracker } from '../utils/priceValidationAnalytics';
+import { telegramRateLimit } from '../services/TelegramRateLimit';
 
 interface Product {
   id: string;
@@ -72,6 +73,17 @@ const CartPage: React.FC<CartPageProps> = ({
   const { t, language, languageDisplay } = useLanguage();
   // Add revalidateCartAvailability to destructure
   const { cartItems, updateQuantity, removeFromCart, getCartTotal, getTotalMRP, getTotalSavings, clearCart, validatePrices, updateCartPrices, validatePricesManually, revalidateCartAvailability } = useCart();
+
+  // Rate limit checking state
+  const [rateLimitStatus, setRateLimitStatus] = useState<{
+    checking: boolean;
+    allowed: boolean;
+    reason?: string;
+    exemptionReason?: string;
+  }>({
+    checking: false,
+    allowed: true
+  });
 
   // PATCH: Remove unavailable items from cart on load
   useEffect(() => {
@@ -280,9 +292,36 @@ const CartPage: React.FC<CartPageProps> = ({
 
     setPriceValidationResult(null);
     setValidatingPrices(true);
+    setRateLimitStatus({ checking: true, allowed: true });
+    
     const startTime = Date.now();
     
     try {
+      // Check rate limits first
+      const rateLimits = await telegramRateLimit.canPlaceOrder();
+      
+      if (!rateLimits.allowed) {
+        setRateLimitStatus({
+          checking: false,
+          allowed: false,
+          reason: rateLimits.reason
+        });
+        setValidatingPrices(false);
+        return;
+      } else {
+        // If this is using an exemption, mark it as used
+        if (rateLimits.exemptionReason) {
+          await telegramRateLimit.useExemptionToken();
+          setRateLimitStatus({ 
+            checking: false, 
+            allowed: true,
+            exemptionReason: rateLimits.exemptionReason 
+          });
+        } else {
+          setRateLimitStatus({ checking: false, allowed: true });
+        }
+      }
+      
       const currentCartItems = latestCartItemsRef.current;
       if (currentCartItems.length === 0) {
         return;
@@ -381,7 +420,7 @@ const CartPage: React.FC<CartPageProps> = ({
   };
 
   // Updated handlePlaceOrder to support payment methods
-  const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData }: { 
+  const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData, cartItems: orderCartItems }: { 
     address: any; 
     message: string; 
     paymentMethod: 'cod' | 'online';
@@ -397,8 +436,11 @@ const CartPage: React.FC<CartPageProps> = ({
       return;
     }
 
+    // Use order-specific cart items if provided, otherwise use cart context
+    const itemsToOrder = orderCartItems || cartItems;
+
     // PATCH: Block order placement if any item is unavailable
-    const unavailableItems = cartItems.filter(item => item.available === false);
+    const unavailableItems = itemsToOrder.filter(item => item.available === false);
     if (unavailableItems.length > 0) {
       alert(`Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`);
       unavailableItems.forEach(item => removeFromCart(item.id));
@@ -407,9 +449,20 @@ const CartPage: React.FC<CartPageProps> = ({
 
     setPlacingOrder(true);
     
+    // Generate order number first to use with rate limiting
+    const orderNumber = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    
+    // Record the order in the rate limiting system
+    try {
+      await telegramRateLimit.recordOrderPlacement(orderNumber);
+    } catch (error) {
+      console.error("Failed to record order in rate limiting system:", error);
+      // Continue with order placement even if this fails
+    }
+    
     const order = {
       user: userId,
-      items: cartItems.map(item => ({
+      items: itemsToOrder.map(item => ({
         id: item.id,
         name: item.name,
         price: item.price,
@@ -434,7 +487,7 @@ const CartPage: React.FC<CartPageProps> = ({
       }),
       createdAt: Timestamp.now(),
       notified: false,
-      orderNumber: `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`
+      orderNumber: orderNumber
     };
 console.log("Creating order with items:", order.items);
     try {
@@ -544,6 +597,36 @@ console.log("Creating order with items:", order.items);
                 <b>Step 2:</b> Complete registration by sharing your name, phone, and location.<br />
                 <b>Step 3:</b> Then return here and try again!
                 {accessError && <div className="mt-2 text-red-600">{accessError}</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rate limit warning */}
+      {rateLimitStatus.reason && !rateLimitStatus.allowed && (
+        <div className="max-w-lg mx-auto mt-4">
+          <div className="flex items-center bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow">
+            <AlertTriangle className="mr-2 flex-shrink-0" />
+            <div>
+              <div className="font-semibold mb-1">Order Limit Reached</div>
+              <div className="text-sm">
+                {rateLimitStatus.reason}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancellation Exemption Notice */}
+      {rateLimitStatus.exemptionReason && (
+        <div className="max-w-lg mx-auto mt-4">
+          <div className="flex items-center bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 rounded-lg shadow">
+            <div>
+              <div className="font-semibold mb-1">Order Cancellation Exemption</div>
+              <div className="text-sm">
+                Since you recently cancelled an order, you can place a new order immediately. 
+                This exemption is one-time only.
               </div>
             </div>
           </div>
@@ -661,11 +744,15 @@ console.log("Creating order with items:", order.items);
       <div className="fixed bottom-16 sm:bottom-20 left-0 right-0 bg-white border-t border-gray-200 p-3 sm:p-4 safe-area-inset-bottom">
         <button
           onClick={handleProceedToCheckout}
-          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
-          disabled={!userId || !!accessError || authLoading || validatingPrices}
+          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices || rateLimitStatus.checking || !rateLimitStatus.allowed) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+          disabled={!userId || !!accessError || authLoading || validatingPrices || rateLimitStatus.checking || !rateLimitStatus.allowed}
         >
           {validatingPrices
             ? 'Validating Prices...'
+            : rateLimitStatus.checking
+            ? 'Checking Limits...'
+            : !rateLimitStatus.allowed
+            ? 'Order Limit Reached'
             : (!userId || accessError)
             ? 'Registration Required'
             : t('proceedToCheckout') + ` • ₹${grandTotal}`}

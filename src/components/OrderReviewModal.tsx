@@ -5,6 +5,8 @@ import AddressModal, { Address } from './AddressModal';
 import { useCart } from '../contexts/CartContext';
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { telegramRateLimit } from '../services/TelegramRateLimit';
+import { AlertTriangle } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -124,6 +126,19 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   const checkmarkTimeout = useRef<NodeJS.Timeout | null>(null);
   const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
 
+  // Rate limiting state
+  const [rateLimitStatus, setRateLimitStatus] = useState<{
+    checking: boolean;
+    allowed: boolean;
+    reason?: string;
+    retryAfter?: number;
+    activeOrders?: number;
+  }>({ checking: true, allowed: true });
+
+  // Atomic order placement protection
+  const orderPlacementRef = useRef(false);
+  const orderIdRef = useRef<string | null>(null);
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -158,6 +173,31 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       }
     };
   }, []);
+
+  // Check rate limits when modal opens
+  useEffect(() => {
+    if (open && userId) {
+      setRateLimitStatus(prev => ({ ...prev, checking: true }));
+      
+      const checkRateLimit = async () => {
+        try {
+          const result = await telegramRateLimit.canPlaceOrder();
+          setRateLimitStatus({
+            checking: false,
+            allowed: result.allowed,
+            reason: result.reason,
+            retryAfter: result.retryAfter,
+            activeOrders: result.activeOrders
+          });
+        } catch (error) {
+          console.error('Rate limit check failed:', error);
+          setRateLimitStatus({ checking: false, allowed: true });
+        }
+      };
+      
+      checkRateLimit();
+    }
+  }, [open, userId]);
 
   // Log cart items for debugging
   useEffect(() => {
@@ -194,6 +234,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       setProgress(0);
       setOrderPlaced(false);
       setStep('idle');
+      setRateLimitStatus({ checking: false, allowed: true });
+      orderPlacementRef.current = false;
+      orderIdRef.current = null;
       if (progressInterval.current) clearInterval(progressInterval.current);
       if (confettiTimeout.current) clearTimeout(confettiTimeout.current);
       if (checkmarkTimeout.current) clearTimeout(checkmarkTimeout.current);
@@ -383,6 +426,15 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               // Enrich cart items with category (if not already present)
               const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
 
+              // Generate order ID
+              const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
+              orderIdRef.current = orderId;
+              
+              // Record order in rate limiting system
+              if (userId) {
+                await telegramRateLimit.recordOrderPlacement(orderId);
+              }
+
               // Place order with payment data
               if (onPlaceOrder) {
                 onPlaceOrder({
@@ -492,8 +544,56 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     return enrichedItems;
   };
 
+  // Render rate limit status
+  const renderRateLimitStatus = () => {
+    if (rateLimitStatus.checking) {
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+          <div className="flex items-center gap-2">
+            <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+            <span className="text-blue-800 text-sm">Checking order limits...</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (!rateLimitStatus.allowed) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="text-red-600 mt-0.5" size={16} />
+            <div>
+              <p className="text-red-700 text-sm">{rateLimitStatus.reason}</p>
+              {rateLimitStatus.retryAfter && (
+                <p className="text-red-600 text-xs mt-1">
+                  Try again in: {telegramRateLimit.formatTimeRemaining ? telegramRateLimit.formatTimeRemaining(rateLimitStatus.retryAfter) : Math.ceil(rateLimitStatus.retryAfter / 60) + ' minutes'}
+                </p>
+              )}
+              {rateLimitStatus.activeOrders && rateLimitStatus.activeOrders > 0 && (
+                <p className="text-blue-600 text-xs mt-1">
+                  You have {rateLimitStatus.activeOrders} active order(s).
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   // Handle place order
   const handlePlaceOrder = async () => {
+    // Prevent duplicate order placement
+    if (orderPlacementRef.current || !rateLimitStatus.allowed) {
+      console.warn('Order placement blocked');
+      return;
+    }
+
+    // Set atomic flag to prevent duplicate orders
+    orderPlacementRef.current = true;
+
     setError(null);
 
     // PATCH: Revalidate cart availability before placing order
@@ -503,6 +603,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
         setError(
           `Some items are out of stock: ${unavailableItems.map(i => i.name).join(', ')}`
         );
+        orderPlacementRef.current = false;
         return;
       }
     }
@@ -513,73 +614,106 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       setError(
         `Some items are out of stock: ${unavailableItems.map(i => i.name).join(', ')}`
       );
+      orderPlacementRef.current = false;
       return;
     }
 
     if (!selectedAddress) {
       setError('Please select a delivery address.');
+      orderPlacementRef.current = false;
       return;
     }
     if (!deliveryAllowed) {
       setError('Delivery is not available to your selected address.');
+      orderPlacementRef.current = false;
       return;
     }
-    if (step !== 'idle') return;
+    if (step !== 'idle') {
+      orderPlacementRef.current = false;
+      return;
+    }
 
-    if (paymentMethod === 'cod') {
-      setStep('progress');
-      let prog = 0;
-      setProgress(0);
-      progressInterval.current = setInterval(() => {
-        prog += Math.random() * 18 + 7;
-        if (prog >= 100) {
-          prog = 100;
-          setProgress(100);
-          clearInterval(progressInterval.current!);
+    try {
+      if (paymentMethod === 'cod') {
+        setStep('progress');
+        let prog = 0;
+        setProgress(0);
+        
+        progressInterval.current = setInterval(() => {
+          prog += Math.random() * 18 + 7;
+          if (prog >= 100) {
+            prog = 100;
+            setProgress(100);
+            clearInterval(progressInterval.current!);
 
-          if (!orderPlaced) {
-            setOrderPlaced(true);
+            if (!orderPlaced) {
+              setOrderPlaced(true);
 
-            // Enrich cart items with category information
-            enrichCartItemsWithCategory(cartItems).then(enrichedItems => {
-              if (onPlaceOrder) {
-                onPlaceOrder({
-                  address: selectedAddress,
-                  message,
-                  paymentMethod: 'cod',
-                  customerName: user?.name,
-                  customerPhone: user?.phone,
-                  cartItems: enrichedItems,
-                });
-              }
-            });
+              // Enrich cart items with category information
+              enrichCartItemsWithCategory(cartItems).then(async (enrichedItems) => {
+                if (onPlaceOrder && orderPlacementRef.current) {
+                  // Generate unique order ID
+                  const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
+                  orderIdRef.current = orderId;
+                  
+                  // Record order in rate limiting system
+                  if (userId) {
+                    await telegramRateLimit.recordOrderPlacement(orderId);
+                  }
+                  
+                  onPlaceOrder({
+                    address: selectedAddress,
+                    message,
+                    paymentMethod: 'cod',
+                    customerName: user?.name,
+                    customerPhone: user?.phone,
+                    cartItems: enrichedItems,
+                  });
+                }
+              });
+            }
+
+            setTimeout(() => {
+              setStep('confetti');
+              confettiTimeout.current = setTimeout(() => {
+                setStep('checkmark');
+                checkmarkTimeout.current = setTimeout(() => {
+                  if (onNavigateToOrders) onNavigateToOrders();
+                  if (onClearCart) onClearCart();
+                  if (onClose) onClose();
+                  redirectTimeout.current = setTimeout(() => {
+                    setStep('idle');
+                    setOrderPlaced(false);
+                    setProgress(0);
+                  }, 500);
+                }, 3000);
+              }, 4000);
+            }, 500);
+          } else {
+            setProgress(Math.min(prog, 99));
           }
-
-          setTimeout(() => {
-            setStep('confetti');
-            confettiTimeout.current = setTimeout(() => {
-              setStep('checkmark');
-              checkmarkTimeout.current = setTimeout(() => {
-                if (onNavigateToOrders) onNavigateToOrders();
-                if (onClearCart) onClearCart();
-                if (onClose) onClose();
-                redirectTimeout.current = setTimeout(() => {
-                  setStep('idle');
-                  setOrderPlaced(false);
-                  setProgress(0);
-                }, 500);
-              }, 3000);
-            }, 4000);
-          }, 500);
-        } else {
-          setProgress(Math.min(prog, 99));
-        }
-      }, 120);
-    } else {
-      setStep('payment');
-      handleRazorpayPayment();
+        }, 120);
+      } else {
+        setStep('payment');
+        handleRazorpayPayment();
+      }
+    } catch (error) {
+      console.error('Order placement failed:', error);
+      orderPlacementRef.current = false;
+      setError('Failed to place order. Please try again.');
     }
   };
+
+  // Clean up function
+  useEffect(() => {
+    return () => {
+      if (progressInterval.current) clearInterval(progressInterval.current);
+      if (confettiTimeout.current) clearTimeout(confettiTimeout.current);
+      if (checkmarkTimeout.current) clearTimeout(checkmarkTimeout.current);
+      if (redirectTimeout.current) clearTimeout(redirectTimeout.current);
+      orderPlacementRef.current = false;
+    };
+  }, []);
 
   // --- Telegram back button integration for modal ---
   useEffect(() => {
@@ -662,6 +796,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                     Delivery is not available to your selected address. Please choose a different address within our delivery area.
                   </div>
                 )}
+
+                {/* Rate limit status */}
+                {step === 'idle' && renderRateLimitStatus()}
 
                 {/* Error message */}
                 {error && (
@@ -842,14 +979,14 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white' }}>
                 <button
                   className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${
-                    disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment
+                    disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment || !rateLimitStatus.allowed || rateLimitStatus.checking || orderPlacementRef.current
                       ? 'bg-gray-400 cursor-not-allowed'
                       : step === 'confetti' || step === 'checkmark' || paymentCompleted
                       ? 'bg-green-500'
                       : 'bg-teal-600 hover:bg-teal-700'
                   }`}
                   onClick={handlePlaceOrder}
-                  disabled={disableOrderReview || !deliveryAllowed || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || !selectedAddress || processingPayment}
+                  disabled={disableOrderReview || !deliveryAllowed || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || !selectedAddress || processingPayment || !rateLimitStatus.allowed || rateLimitStatus.checking || orderPlacementRef.current}
                   style={{ minHeight: 48 }}
                 >
                   {step === 'progress' ? (
@@ -865,6 +1002,12 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                     <span>Opening Payment...</span>
                   ) : step === 'confetti' || step === 'checkmark' || paymentCompleted ? (
                     <span>✅ {paymentMethod === 'cod' ? 'Order Placed!' : 'Payment Successful!'}</span>
+                  ) : orderPlacementRef.current ? (
+                    <span>Processing...</span>
+                  ) : rateLimitStatus.checking ? (
+                    <span>Checking...</span>
+                  ) : !rateLimitStatus.allowed ? (
+                    <span>Order Limit Reached</span>
                   ) : (
                     <>
                       {paymentMethod === 'cod' ? (

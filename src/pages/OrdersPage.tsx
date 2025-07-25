@@ -6,6 +6,7 @@ import { useCart } from '../contexts/CartContext';
 import { useAddresses } from '../hooks/useAddresses';
 import { db } from '../firebase.ts';
 import { collection, query, where, orderBy, onSnapshot, getDocs, updateDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { telegramRateLimit } from '../services/TelegramRateLimit';
 
 interface OrdersPageProps {
   userId?: string | null;
@@ -41,6 +42,7 @@ interface OrderData {
   message?: string | null;
   user: string;
   customerResponse?: string;
+  cancelledByCustomer?: boolean;
 }
 
 const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => {
@@ -83,6 +85,25 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
     });
     return () => unsub();
   }, [userId]);
+
+  // Monitor order status changes for rate limiting
+  useEffect(() => {
+    if (!userId) return;
+    
+    const processOrderStatuses = (orders: OrderData[]) => {
+      orders.forEach(order => {
+        // If order is in a terminal state, update rate limiting
+        if (['delivered', 'completed', 'cancelled'].includes(order.status)) {
+          telegramRateLimit.recordOrderCompletion(order.id);
+        }
+      });
+    };
+    
+    // Process initial order data
+    if (orders.length > 0) {
+      processOrderStatuses(orders);
+    }
+  }, [orders, userId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -163,6 +184,15 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   const handleReorder = async (order: OrderData) => {
     try {
       setReorderingOrderId(order.id);
+      
+      // Check rate limits before allowing reorder
+      const canPlaceOrder = await telegramRateLimit.canPlaceOrder();
+      if (!canPlaceOrder.allowed) {
+        alert(canPlaceOrder.reason || 'Cannot place order at this time. Please try again later.');
+        setReorderingOrderId(null);
+        return;
+      }
+      
       const cartItems = [];
       for (const orderItem of order.items) {
         try {
@@ -254,8 +284,15 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         await updateDoc(orderRef, {
           status: 'cancelled',
           customerResponse: 'cancelled',
+          cancelledByCustomer: true,
+          cancellationReason: 'Cancelled by customer',
           customerResponseAt: serverTimestamp()
         });
+        
+        // Record order completion for cancelled orders
+        if (userId) {
+          await telegramRateLimit.recordOrderCompletion(orderId);
+        }
       }
 
       // --- Add orderLogs entry for customer response ---
@@ -272,6 +309,53 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
     } finally {
       setActionLoading(null);
     }
+  };
+
+  // New function to handle customer cancellation of pending orders
+  const handleCancelOrder = async (orderId: string) => {
+    if (!confirm("Are you sure you want to cancel this order?")) return;
+    
+    setActionLoading(orderId + 'cancel');
+    try {
+      const orderRef = doc(db, "orders", orderId);
+      
+      // Update order status
+      await updateDoc(orderRef, {
+        status: 'cancelled',
+        customerResponse: 'cancelled',
+        cancelledByCustomer: true,
+        cancellationReason: 'Cancelled by customer',
+        customerResponseAt: serverTimestamp()
+      });
+      
+      // Add log entry
+      const logRef = collection(db, "orders", orderId, "orderLogs");
+      await addDoc(logRef, {
+        action: 'customer_cancellation',
+        response: 'cancelled',
+        timestamp: serverTimestamp()
+      });
+      
+      // Grant exemption from rate limiting
+      if (userId) {
+        await telegramRateLimit.grantCancellationExemption(orderId);
+        await telegramRateLimit.recordOrderCompletion(orderId);
+      }
+      
+      // Optional: Show success message
+      alert("Your order has been cancelled successfully. You can place a new order immediately.");
+      
+    } catch (err) {
+      console.error("Order cancellation failed:", err);
+      alert("Failed to cancel order. Please try again.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Check if an order can be cancelled by the customer
+  const canCancel = (order: OrderData) => {
+    return ['pending', 'accepted'].includes(order.status);
   };
 
   // Helper to show out-of-stock details
@@ -421,7 +505,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
                       <div className="mb-3 flex items-center gap-2">
                         <XCircle className="text-red-500" size={18} />
                         <span className="text-red-700 font-semibold text-sm">
-                          Order cancelled {order.customerResponse === 'cancelled' ? 'by you' : 'by staff'}.
+                          Order cancelled {order.cancelledByCustomer ? 'by you' : 'by staff'}.
                         </span>
                       </div>
                     )}
@@ -538,27 +622,40 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
                       <div>
                         <span className="text-base sm:text-lg font-semibold text-gray-800">₹{order.total.toFixed(2)}</span>
                       </div>
-                      <button 
-                        onClick={() => handleReorder(order)}
-                        disabled={reorderingOrderId === order.id}
-                        className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
-                          reorderingOrderId === order.id 
-                            ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
-                            : 'bg-teal-600 hover:bg-teal-700 text-white'
-                        }`}
-                      >
-                        {reorderingOrderId === order.id ? (
-                          <>
-                            <div className="animate-spin h-3 w-3 sm:h-4 sm:w-4 border-2 border-white border-t-transparent rounded-full" />
-                            <span className="text-xs sm:text-sm font-medium">Loading...</span>
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw size={14} className="sm:w-4 sm:h-4" />
-                            <span className="text-xs sm:text-sm font-medium">{t('reorder')}</span>
-                          </>
+                      <div className="flex items-center gap-2">
+                        {canCancel(order) && (
+                          <button
+                            onClick={() => handleCancelOrder(order.id)}
+                            disabled={actionLoading === order.id + 'cancel'}
+                            className={`px-3 py-2 rounded-lg font-medium text-white bg-red-600 hover:bg-red-700 transition ${
+                              actionLoading === order.id + 'cancel' ? 'opacity-60 cursor-not-allowed' : ''
+                            }`}
+                          >
+                            {actionLoading === order.id + 'cancel' ? 'Cancelling...' : 'Cancel Order'}
+                          </button>
                         )}
-                      </button>
+                        <button 
+                          onClick={() => handleReorder(order)}
+                          disabled={reorderingOrderId === order.id}
+                          className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
+                            reorderingOrderId === order.id 
+                              ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
+                              : 'bg-teal-600 hover:bg-teal-700 text-white'
+                          }`}
+                        >
+                          {reorderingOrderId === order.id ? (
+                            <>
+                              <div className="animate-spin h-3 w-3 sm:h-4 sm:w-4 border-2 border-white border-t-transparent rounded-full" />
+                              <span className="text-xs sm:text-sm font-medium">Loading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw size={14} className="sm:w-4 sm:h-4" />
+                              <span className="text-xs sm:text-sm font-medium">{t('reorder')}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
