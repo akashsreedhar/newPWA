@@ -133,6 +133,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     reason?: string;
     retryAfter?: number;
     activeOrders?: number;
+    exemptionReason?: string;
   }>({ checking: true, allowed: true });
 
   // Atomic order placement protection
@@ -187,7 +188,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             allowed: result.allowed,
             reason: result.reason,
             retryAfter: result.retryAfter,
-            activeOrders: result.activeOrders
+            activeOrders: result.activeOrders,
+            exemptionReason: result.exemptionReason
           });
         } catch (error) {
           console.error('Rate limit check failed:', error);
@@ -557,7 +559,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       );
     }
 
-    if (!rateLimitStatus.allowed) {
+    if (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) {
       return (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
           <div className="flex items-start gap-2">
@@ -580,13 +582,29 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       );
     }
 
+    if (rateLimitStatus.exemptionReason) {
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+          <div className="flex items-start gap-2">
+            <div>
+              <p className="text-blue-700 text-sm font-semibold">Cancellation Exemption Applied</p>
+              <p className="text-blue-600 text-xs mt-1">
+                Since you recently cancelled an order, you can place a new order immediately.
+                This exemption is one-time only.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
   // Handle place order
   const handlePlaceOrder = async () => {
     // Prevent duplicate order placement
-    if (orderPlacementRef.current || !rateLimitStatus.allowed) {
+    if (orderPlacementRef.current || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)) {
       console.warn('Order placement blocked');
       return;
     }
@@ -979,14 +997,14 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white' }}>
                 <button
                   className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${
-                    disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment || !rateLimitStatus.allowed || rateLimitStatus.checking || orderPlacementRef.current
+                    disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current
                       ? 'bg-gray-400 cursor-not-allowed'
                       : step === 'confetti' || step === 'checkmark' || paymentCompleted
                       ? 'bg-green-500'
                       : 'bg-teal-600 hover:bg-teal-700'
                   }`}
                   onClick={handlePlaceOrder}
-                  disabled={disableOrderReview || !deliveryAllowed || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || !selectedAddress || processingPayment || !rateLimitStatus.allowed || rateLimitStatus.checking || orderPlacementRef.current}
+                  disabled={disableOrderReview || !deliveryAllowed || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || !selectedAddress || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current}
                   style={{ minHeight: 48 }}
                 >
                   {step === 'progress' ? (
@@ -1006,7 +1024,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                     <span>Processing...</span>
                   ) : rateLimitStatus.checking ? (
                     <span>Checking...</span>
-                  ) : !rateLimitStatus.allowed ? (
+                  ) : !rateLimitStatus.allowed && !rateLimitStatus.exemptionReason ? (
                     <span>Order Limit Reached</span>
                   ) : (
                     <>
