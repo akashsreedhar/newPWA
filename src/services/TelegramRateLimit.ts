@@ -210,12 +210,47 @@ export class TelegramRateLimit {
   }
   
   /**
+   * Logs exemption token status for debugging
+   */
+  private async logExemptionStatus(): Promise<void> {
+    try {
+      const history = await this.getOrderHistory();
+      const now = Date.now();
+      
+      if (history.cancelExemptionToken) {
+        const token = history.cancelExemptionToken;
+        const isValid = token.expiresAt > now && !token.used;
+        const expiresIn = Math.floor((token.expiresAt - now) / 1000);
+        
+        console.log(`🎟️ Exemption token status:
+        - Valid: ${isValid}
+        - Used: ${token.used}
+        - Expires in: ${expiresIn > 0 ? `${expiresIn}s` : 'Expired'}
+        - Order ID: ${token.orderId}
+      `);
+      } else {
+        console.log('🎟️ No exemption token found in local storage');
+      }
+      
+      if (history.postExemptionCooldown && history.postExemptionCooldown.expiresAt > now) {
+        const cooldownRemaining = Math.floor((history.postExemptionCooldown.expiresAt - now) / 1000);
+        console.log(`⏳ Post-exemption cooldown: ${cooldownRemaining}s remaining`);
+      }
+    } catch (error) {
+      console.error('Error logging exemption status:', error);
+    }
+  }
+  
+  /**
    * Check if user can place a new order (primary public method)
    * Uses server-side validation with client-side fallback
    */
   public async canPlaceOrder(): Promise<RateLimitResult> {
     try {
       await this.init();
+      
+      // Log current exemption status
+      await this.logExemptionStatus();
       
       const userId = this.getUserId();
       if (!userId || userId.startsWith('session_')) {
@@ -266,6 +301,15 @@ export class TelegramRateLimit {
           this.cache.serverCacheUntil = now + (RATE_LIMIT_CONFIG.SERVER_CACHE_TTL_SECONDS * 1000);
           
           console.log('✅ Server rate limit check:', result);
+          
+          // Extra logging for exemption
+          if (result.exemptionReason) {
+            console.log(`🎟️ Server returned exemption reason: ${result.exemptionReason}`);
+            if (result.exemption) {
+              console.log(`🎟️ Exemption details: Order ${result.exemption.orderId}, expires at ${new Date(result.exemption.expiresAt).toLocaleTimeString()}`);
+            }
+          }
+          
           return result;
         } catch (error) {
           lastError = error;
@@ -331,6 +375,8 @@ export class TelegramRateLimit {
         !history.cancelExemptionToken.used &&
         history.cancelExemptionToken.expiresAt > now
       ) {
+        console.log(`🎟️ Using local exemption token for order ${history.cancelExemptionToken.orderId}`);
+        
         // Allow order placement regardless of time interval
         return { 
           allowed: true,
@@ -712,6 +758,29 @@ export class TelegramRateLimit {
       this.cache.serverRateLimit = undefined;
       this.cache.serverCacheUntil = undefined;
       
+      // If connected to server, try server-side exemption
+      const userId = this.getUserId();
+      if (userId && !userId.startsWith('session_')) {
+        try {
+          console.log(`🎟️ Requesting server-side exemption for order ${orderId}`);
+          const response = await fetch(`${this.backendUrl}/grant-cancellation-exemption`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, orderId })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log('✅ Server granted exemption:', result);
+          } else {
+            console.error('❌ Server refused exemption:', await response.text());
+          }
+        } catch (serverError) {
+          console.error('❌ Failed to request server-side exemption:', serverError);
+        }
+      }
+      
+      // Also set up local exemption as backup
       const history = await this.getOrderHistory();
       
       // Set expiration to 10 minutes from now
@@ -722,6 +791,8 @@ export class TelegramRateLimit {
         expiresAt,
         used: false
       };
+      
+      console.log(`🎟️ Granted local exemption for order ${orderId} until ${new Date(expiresAt).toLocaleTimeString()}`);
       
       return await this.saveOrderHistory(history);
     } catch (error) {
@@ -735,6 +806,9 @@ export class TelegramRateLimit {
    */
   public async useExemptionToken(): Promise<void> {
     try {
+      // First log current status
+      await this.logExemptionStatus();
+      
       // Clear server cache
       this.cache.serverRateLimit = undefined;
       this.cache.serverCacheUntil = undefined;
@@ -743,7 +817,9 @@ export class TelegramRateLimit {
       const userId = this.getUserId();
       if (userId && !userId.startsWith('session_')) {
         try {
-          await fetch(`${this.backendUrl}/use-cancellation-exemption`, {
+          console.log(`🎟️ Calling server to use exemption token for user ${userId}`);
+          
+          const response = await fetch(`${this.backendUrl}/use-cancellation-exemption`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -752,7 +828,13 @@ export class TelegramRateLimit {
               userId: userId
             })
           });
-          console.log('✅ Used exemption token on server with 5-minute cooldown');
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log('✅ Server response for using exemption token:', result);
+          } else {
+            console.error(`❌ Server returned error (${response.status}):`, await response.text());
+          }
         } catch (serverError) {
           console.error('❌ Failed to use exemption token on server:', serverError);
         }
@@ -761,6 +843,8 @@ export class TelegramRateLimit {
       // Also update local storage
       const history = await this.getOrderHistory();
       if (history.cancelExemptionToken) {
+        console.log(`🎟️ Marking local exemption token as used (order ${history.cancelExemptionToken.orderId})`);
+        
         history.cancelExemptionToken.used = true;
         
         // Add 5-minute cooldown period
@@ -769,7 +853,13 @@ export class TelegramRateLimit {
         };
         
         await this.saveOrderHistory(history);
+        console.log('✅ Updated local exemption token status and added cooldown');
+      } else {
+        console.warn('⚠️ No exemption token found in local storage to mark as used');
       }
+      
+      // Log final status after changes
+      await this.logExemptionStatus();
     } catch (error) {
       console.error('Error marking exemption token as used:', error);
     }
