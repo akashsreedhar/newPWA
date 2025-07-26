@@ -74,12 +74,14 @@ const CartPage: React.FC<CartPageProps> = ({
   // Add revalidateCartAvailability to destructure
   const { cartItems, updateQuantity, removeFromCart, getCartTotal, getTotalMRP, getTotalSavings, clearCart, validatePrices, updateCartPrices, validatePricesManually, revalidateCartAvailability } = useCart();
 
-  // Rate limit checking state
+  // Enhanced rate limit checking state
   const [rateLimitStatus, setRateLimitStatus] = useState<{
     checking: boolean;
     allowed: boolean;
     reason?: string;
     exemptionReason?: string;
+    retryAfter?: number;
+    cooldownType?: string;
   }>({
     checking: false,
     allowed: true
@@ -300,11 +302,13 @@ const CartPage: React.FC<CartPageProps> = ({
       // Check rate limits first
       const rateLimits = await telegramRateLimit.canPlaceOrder();
       
-      if (!rateLimits.allowed) {
+      if (!rateLimits.allowed && !rateLimits.exemptionReason) {
         setRateLimitStatus({
           checking: false,
           allowed: false,
-          reason: rateLimits.reason
+          reason: rateLimits.reason,
+          retryAfter: rateLimits.retryAfter,
+          cooldownType: rateLimits.cooldownType
         });
         setValidatingPrices(false);
         return;
@@ -545,6 +549,20 @@ console.log("Creating order with items:", order.items);
     }, 100);
   };
 
+  // Time formatting helper function
+  const formatTimeRemaining = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+    } else if (seconds < 3600) {
+      const minutes = Math.ceil(seconds / 60);
+      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.ceil((seconds % 3600) / 60);
+      return `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` and ${minutes} minute${minutes !== 1 ? 's' : ''}` : ''}`;
+    }
+  };
+
   if (cartItems.length === 0) {
     return (
       <div className="bg-gray-50 min-h-screen pb-20 sm:pb-24 flex items-center justify-center px-4">
@@ -603,8 +621,8 @@ console.log("Creating order with items:", order.items);
         </div>
       )}
 
-      {/* Rate limit warning */}
-      {rateLimitStatus.reason && !rateLimitStatus.allowed && (
+      {/* Rate limit warning (only show if no exemption) */}
+      {rateLimitStatus.reason && !rateLimitStatus.allowed && !rateLimitStatus.exemptionReason && (
         <div className="max-w-lg mx-auto mt-4">
           <div className="flex items-center bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow">
             <AlertTriangle className="mr-2 flex-shrink-0" />
@@ -612,14 +630,19 @@ console.log("Creating order with items:", order.items);
               <div className="font-semibold mb-1">Order Limit Reached</div>
               <div className="text-sm">
                 {rateLimitStatus.reason}
+                {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
+                  <div className="mt-1 text-red-600 font-medium">
+                    Try again in: {formatTimeRemaining(rateLimitStatus.retryAfter)}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Cancellation Exemption Notice */}
-      {rateLimitStatus.exemptionReason && (
+      {/* Cancellation Exemption Notice (only show if exemption is active and allowed) */}
+      {rateLimitStatus.exemptionReason && rateLimitStatus.allowed && (
         <div className="max-w-lg mx-auto mt-4">
           <div className="flex items-center bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 rounded-lg shadow">
             <div>
@@ -744,14 +767,14 @@ console.log("Creating order with items:", order.items);
       <div className="fixed bottom-16 sm:bottom-20 left-0 right-0 bg-white border-t border-gray-200 p-3 sm:p-4 safe-area-inset-bottom">
         <button
           onClick={handleProceedToCheckout}
-          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices || rateLimitStatus.checking || !rateLimitStatus.allowed) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
-          disabled={!userId || !!accessError || authLoading || validatingPrices || rateLimitStatus.checking || !rateLimitStatus.allowed}
+          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+          disabled={!userId || !!accessError || authLoading || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)}
         >
           {validatingPrices
             ? 'Validating Prices...'
             : rateLimitStatus.checking
             ? 'Checking Limits...'
-            : !rateLimitStatus.allowed
+            : (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)
             ? 'Order Limit Reached'
             : (!userId || accessError)
             ? 'Registration Required'

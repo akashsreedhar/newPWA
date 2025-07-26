@@ -126,7 +126,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   const checkmarkTimeout = useRef<NodeJS.Timeout | null>(null);
   const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Rate limiting state
+  // Enhanced rate limiting state with cooldown type tracking
   const [rateLimitStatus, setRateLimitStatus] = useState<{
     checking: boolean;
     allowed: boolean;
@@ -134,6 +134,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     retryAfter?: number;
     activeOrders?: number;
     exemptionReason?: string;
+    cooldownType?: string;
   }>({ checking: true, allowed: true });
 
   // Atomic order placement protection
@@ -175,7 +176,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     };
   }, []);
 
-  // Check rate limits when modal opens
+  // Enhanced rate limit check when modal opens
   useEffect(() => {
     if (open && userId) {
       setRateLimitStatus(prev => ({ ...prev, checking: true }));
@@ -189,7 +190,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
             reason: result.reason,
             retryAfter: result.retryAfter,
             activeOrders: result.activeOrders,
-            exemptionReason: result.exemptionReason
+            exemptionReason: result.exemptionReason,
+            cooldownType: result.cooldownType
           });
         } catch (error) {
           console.error('Rate limit check failed:', error);
@@ -425,6 +427,11 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               setProcessingPayment(false);
               setVerifyingPayment(false);
 
+              // Use exemption token if available before placing order
+              if (rateLimitStatus.exemptionReason) {
+                await telegramRateLimit.useExemptionToken();
+              }
+
               // Enrich cart items with category (if not already present)
               const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
 
@@ -546,7 +553,21 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     return enrichedItems;
   };
 
-  // Render rate limit status
+  // Time formatting helper function
+  const formatTimeRemaining = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+    } else if (seconds < 3600) {
+      const minutes = Math.ceil(seconds / 60);
+      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.ceil((seconds % 3600) / 60);
+      return `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` and ${minutes} minute${minutes !== 1 ? 's' : ''}` : ''}`;
+    }
+  };
+
+  // Enhanced render rate limit status
   const renderRateLimitStatus = () => {
     if (rateLimitStatus.checking) {
       return (
@@ -559,16 +580,18 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       );
     }
 
+    // Only show rate limit warning if no exemption is available
     if (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) {
       return (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
           <div className="flex items-start gap-2">
             <AlertTriangle className="text-red-600 mt-0.5" size={16} />
             <div>
-              <p className="text-red-700 text-sm">{rateLimitStatus.reason}</p>
-              {rateLimitStatus.retryAfter && (
+              <p className="text-red-700 text-sm font-semibold">Order Limit Reached</p>
+              <p className="text-red-600 text-xs mt-1">{rateLimitStatus.reason}</p>
+              {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
                 <p className="text-red-600 text-xs mt-1">
-                  Try again in: {telegramRateLimit.formatTimeRemaining ? telegramRateLimit.formatTimeRemaining(rateLimitStatus.retryAfter) : Math.ceil(rateLimitStatus.retryAfter / 60) + ' minutes'}
+                  Try again in: {formatTimeRemaining(rateLimitStatus.retryAfter)}
                 </p>
               )}
               {rateLimitStatus.activeOrders && rateLimitStatus.activeOrders > 0 && (
@@ -582,15 +605,16 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       );
     }
 
-    if (rateLimitStatus.exemptionReason) {
+    // Show exemption notice only when exemption is active
+    if (rateLimitStatus.exemptionReason && rateLimitStatus.allowed) {
       return (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
           <div className="flex items-start gap-2">
             <div>
-              <p className="text-blue-700 text-sm font-semibold">Cancellation Exemption Applied</p>
+              <p className="text-blue-700 text-sm font-semibold">Order Cancellation Exemption</p>
               <p className="text-blue-600 text-xs mt-1">
                 Since you recently cancelled an order, you can place a new order immediately.
-                This exemption is one-time only.
+                This exemption is one-time only and will be used when you place this order.
               </p>
             </div>
           </div>
@@ -601,11 +625,11 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     return null;
   };
 
-  // Handle place order
+  // Enhanced handle place order with proper exemption handling
   const handlePlaceOrder = async () => {
-    // Prevent duplicate order placement
+    // Enhanced order placement blocking
     if (orderPlacementRef.current || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)) {
-      console.warn('Order placement blocked');
+      console.warn('Order placement blocked - rate limit or already processing');
       return;
     }
 
@@ -670,6 +694,11 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               // Enrich cart items with category information
               enrichCartItemsWithCategory(cartItems).then(async (enrichedItems) => {
                 if (onPlaceOrder && orderPlacementRef.current) {
+                  // Use exemption token before placing order if available
+                  if (rateLimitStatus.exemptionReason) {
+                    await telegramRateLimit.useExemptionToken();
+                  }
+
                   // Generate unique order ID
                   const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
                   orderIdRef.current = orderId;
@@ -815,7 +844,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   </div>
                 )}
 
-                {/* Rate limit status */}
+                {/* Enhanced rate limit status */}
                 {step === 'idle' && renderRateLimitStatus()}
 
                 {/* Error message */}
@@ -993,7 +1022,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Enhanced Action Buttons */}
               <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white' }}>
                 <button
                   className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${
@@ -1029,9 +1058,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   ) : (
                     <>
                       {paymentMethod === 'cod' ? (
-                        <span>🚀 Place Order (COD)</span>
+                        <span>🚀 Place Order (COD){rateLimitStatus.exemptionReason ? ' (Using Exemption)' : ''}</span>
                       ) : (
-                        <span>💳 Pay ₹{total.toFixed(2)} & Place Order</span>
+                        <span>💳 Pay ₹{total.toFixed(2)} & Place Order{rateLimitStatus.exemptionReason ? ' (Using Exemption)' : ''}</span>
                       )}
                     </>
                   )}

@@ -2,18 +2,17 @@
  * TelegramRateLimit Service
  * 
  * This service provides rate limiting functionality for the Telegram Mini App,
- * leveraging Telegram's security features when available and falling back to
- * local storage when needed. It ensures users cannot place too many orders
- * in a short period or exceed daily limits.
+ * now integrated with server-side validation to prevent bypassing via browser refresh.
+ * It ensures users cannot place too many orders in a short period or exceed daily limits.
  */
 
-// Business rules for rate limiting
+// Business rules for rate limiting (must match backend)
 const RATE_LIMIT_CONFIG = {
   MAX_ACTIVE_ORDERS: 2,         // Maximum concurrent active orders
   MIN_ORDER_INTERVAL: 5 * 60,   // Minimum seconds between orders (5 minutes)
   MAX_DAILY_ORDERS: 20,         // Maximum orders per day
   SUSPICIOUS_THRESHOLD: 5,      // Orders in 30 minutes that trigger suspicion
-  CACHE_TTL: 30,                // Seconds to cache rate limit data
+  CACHE_TTL: 10,                // Reduced cache time for more frequent server checks
 };
 
 // Storage keys
@@ -35,6 +34,9 @@ interface OrderHistory {
     expiresAt: number;          // Expiration timestamp
     used: boolean;              // Whether the exemption has been used
   };
+  postExemptionCooldown?: {     // 5-minute cooldown after using exemption
+    expiresAt: number;          // Cooldown expiration timestamp
+  };
 }
 
 interface RateLimitResult {
@@ -43,6 +45,7 @@ interface RateLimitResult {
   retryAfter?: number;          // Seconds until retry is possible
   activeOrders?: number;        // Current active order count
   exemptionReason?: string;     // Reason for exemption if applicable
+  cooldownType?: string;        // Type of cooldown (post_exemption, frequency, etc.)
 }
 
 /**
@@ -54,12 +57,15 @@ export class TelegramRateLimit {
   private telegramWebApp: any = null;
   private telegramUser: any = null;
   private telegramCloudStorage: any = null;
+  private backendUrl: string = 'https://supermarket-backend-ytrh.onrender.com';
   
   // In-memory cache to minimize storage operations
   private cache: {
     orderHistory?: OrderHistory;
     lastFetch?: number;
     validUntil?: number;
+    serverRateLimit?: RateLimitResult;
+    serverCacheUntil?: number;
   } = {};
   
   /**
@@ -124,13 +130,13 @@ export class TelegramRateLimit {
   private getUserId(): string {
     // First try: Telegram user ID (most secure)
     if (this.telegramUser?.id) {
-      return `tg_${this.telegramUser.id}`;
+      return String(this.telegramUser.id);
     }
     
     // Second try: Firebase user ID from localStorage
     const localUserId = localStorage.getItem('current_user_id');
     if (localUserId) {
-      return `local_${localUserId}`;
+      return String(localUserId);
     }
     
     // Last resort: Session-based ID
@@ -198,216 +204,58 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Get order history from storage (with caching)
+   * Check rate limits with server-side validation (primary method)
    */
-  private async getOrderHistory(): Promise<OrderHistory> {
-    // Check cache first for performance
-    const now = Date.now();
-    if (
-      this.cache.orderHistory && 
-      this.cache.validUntil && 
-      this.cache.validUntil > now
-    ) {
-      return this.cache.orderHistory;
-    }
-    
-    const userId = this.getUserId();
-    const storageKey = `${STORAGE_KEYS.ORDER_HISTORY}${userId}`;
-    const today = new Date().toDateString();
-    
-    // Default fresh history object
-    const defaultHistory: OrderHistory = {
-      activeOrders: [],
-      orderTimestamps: [],
-      dailyOrderCount: 0,
-      lastResetDate: today,
-      deviceIds: [this.getOrCreateDeviceFingerprint()]
-    };
-    
+  private async checkServerRateLimits(): Promise<RateLimitResult> {
     try {
-      // Try Telegram CloudStorage first (if available)
-      if (this.telegramCloudStorage) {
-        try {
-          const data = await this.telegramCloudStorage.getItem(storageKey);
-          if (data) {
-            const parsed = JSON.parse(data) as OrderHistory;
-            
-            // Reset daily count if needed
-            if (parsed.lastResetDate !== today) {
-              parsed.dailyOrderCount = 0;
-              parsed.lastResetDate = today;
-              await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(parsed));
-            }
-            
-            // Add current device ID if not already tracked
-            const deviceId = this.getOrCreateDeviceFingerprint();
-            if (!parsed.deviceIds) {
-              parsed.deviceIds = [deviceId];
-            } else if (!parsed.deviceIds.includes(deviceId)) {
-              parsed.deviceIds.push(deviceId);
-              // Keep only the last 5 device IDs
-              if (parsed.deviceIds.length > 5) {
-                parsed.deviceIds = parsed.deviceIds.slice(-5);
-              }
-              await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(parsed));
-            }
-            
-            // Update cache
-            this.cache = {
-              orderHistory: parsed,
-              lastFetch: now,
-              validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
-            };
-            
-            return parsed;
-          }
-        } catch (cloudError) {
-          console.error('Error reading from Telegram CloudStorage:', cloudError);
-          // Continue to fallback mechanism
-        }
-      }
-      
-      // Fallback to localStorage
-      const localData = localStorage.getItem(storageKey);
-      if (localData) {
-        try {
-          const parsed = JSON.parse(localData) as OrderHistory;
-          
-          // Reset daily count if needed
-          if (parsed.lastResetDate !== today) {
-            parsed.dailyOrderCount = 0;
-            parsed.lastResetDate = today;
-            localStorage.setItem(storageKey, JSON.stringify(parsed));
-          }
-          
-          // Add current device ID if not already tracked
-          const deviceId = this.getOrCreateDeviceFingerprint();
-          if (!parsed.deviceIds) {
-            parsed.deviceIds = [deviceId];
-          } else if (!parsed.deviceIds.includes(deviceId)) {
-            parsed.deviceIds.push(deviceId);
-            // Keep only the last 5 device IDs
-            if (parsed.deviceIds.length > 5) {
-              parsed.deviceIds = parsed.deviceIds.slice(-5);
-            }
-            localStorage.setItem(storageKey, JSON.stringify(parsed));
-          }
-          
-          // Update cache
-          this.cache = {
-            orderHistory: parsed,
-            lastFetch: now,
-            validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
-          };
-          
-          return parsed;
-        } catch (parseError) {
-          console.error('Error parsing localStorage data:', parseError);
-          // Continue to default return
-        }
-      }
-      
-      // No data found, return and save default history
-      await this.saveOrderHistory(defaultHistory);
-      return defaultHistory;
-    } catch (error) {
-      console.error('Failed to get order history:', error);
-      return defaultHistory;
-    }
-  }
-  
-  /**
-   * Save order history to storage
-   */
-  private async saveOrderHistory(history: OrderHistory): Promise<boolean> {
-    const userId = this.getUserId();
-    const storageKey = `${STORAGE_KEYS.ORDER_HISTORY}${userId}`;
-    
-    try {
-      // Ensure deviceIds exists
-      if (!history.deviceIds) {
-        history.deviceIds = [this.getOrCreateDeviceFingerprint()];
-      }
-      
-      // Update cache
-      this.cache = {
-        orderHistory: history,
-        lastFetch: Date.now(),
-        validUntil: Date.now() + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
-      };
-      
-      // Try Telegram CloudStorage first
-      if (this.telegramCloudStorage) {
-        try {
-          await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(history));
-          return true;
-        } catch (cloudError) {
-          console.error('Error saving to Telegram CloudStorage:', cloudError);
-          // Continue to fallback
-        }
-      }
-      
-      // Fallback to localStorage
-      localStorage.setItem(storageKey, JSON.stringify(history));
-      return true;
-    } catch (error) {
-      console.error('Failed to save order history:', error);
-      return false;
-    }
-  }
-  
-  /**
-   * Get active orders count from Firebase (minimal cost)
-   */
-  private async getActiveOrdersFromFirestore(): Promise<string[]> {
-    try {
-      // Extract Firebase user ID
-      let firebaseUserId = '';
       const userId = this.getUserId();
-      
-      if (userId.startsWith('local_')) {
-        firebaseUserId = userId.substring(6);
-      } else {
-        const localUserId = localStorage.getItem('current_user_id');
-        if (localUserId) {
-          firebaseUserId = localUserId;
-        } else {
-          return []; // Can't determine Firebase user ID
-        }
+      if (!userId || userId.startsWith('session_')) {
+        // Fallback to local checks for session users
+        return this.checkLocalRateLimits();
       }
       
-      if (!firebaseUserId) return [];
+      // Check server cache first
+      const now = Date.now();
+      if (
+        this.cache.serverRateLimit && 
+        this.cache.serverCacheUntil && 
+        this.cache.serverCacheUntil > now
+      ) {
+        return this.cache.serverRateLimit;
+      }
       
-      // Import Firebase dynamically to avoid circular dependencies
-      const { db } = await import('../firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      
-      // Query active orders
-      const q = query(
-        collection(db, "orders"),
-        where("user", "==", firebaseUserId),
-        where("status", "in", [
-          'pending', 'accepted', 'picking', 'ready', 'out_for_delivery'
-        ])
-      );
-      
-      const snapshot = await getDocs(q);
-      
-      // Return order IDs
-      return snapshot.docs.map(doc => {
-        const data = doc.data();
-        return data.orderNumber || doc.id;
+      const response = await fetch(`${this.backendUrl}/check-rate-limits?userId=${encodeURIComponent(userId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
+      
+      if (!response.ok) {
+        console.error('Server rate limit check failed:', response.status);
+        // Fallback to local checks
+        return this.checkLocalRateLimits();
+      }
+      
+      const result: RateLimitResult = await response.json();
+      
+      // Cache server result for 10 seconds
+      this.cache.serverRateLimit = result;
+      this.cache.serverCacheUntil = now + 10000;
+      
+      console.log('✅ Server rate limit check:', result);
+      return result;
     } catch (error) {
-      console.error('Error getting active orders from Firestore:', error);
-      return [];
+      console.error('Error checking server rate limits:', error);
+      // Fallback to local checks
+      return this.checkLocalRateLimits();
     }
   }
   
   /**
-   * Check if user can place a new order
+   * Fallback local rate limit checking
    */
-  public async canPlaceOrder(): Promise<RateLimitResult> {
+  private async checkLocalRateLimits(): Promise<RateLimitResult> {
     try {
       await this.init();
       const now = Date.now();
@@ -421,6 +269,22 @@ export class TelegramRateLimit {
         history.dailyOrderCount = 0;
         history.lastResetDate = today;
         await this.saveOrderHistory(history);
+      }
+      
+      // Check for post-exemption cooldown
+      if (
+        history.postExemptionCooldown && 
+        history.postExemptionCooldown.expiresAt > now
+      ) {
+        const remainingSeconds = Math.ceil((history.postExemptionCooldown.expiresAt - now) / 1000);
+        const minutes = Math.ceil(remainingSeconds / 60);
+        
+        return {
+          allowed: false,
+          reason: `Please wait ${minutes} minute${minutes > 1 ? 's' : ''} after using exemption before placing another order.`,
+          retryAfter: remainingSeconds,
+          cooldownType: 'post_exemption'
+        };
       }
       
       // Check for valid cancellation exemption token
@@ -502,10 +366,230 @@ export class TelegramRateLimit {
         activeOrders: activeOrdersCount
       };
     } catch (error) {
-      console.error('Error checking if user can place order:', error);
+      console.error('Error checking local rate limits:', error);
       // Fail-safe: allow order if checks fail
       return { allowed: true };
     }
+  }
+  
+  /**
+   * Get order history from storage (with caching)
+   */
+  private async getOrderHistory(): Promise<OrderHistory> {
+    // Check cache first for performance
+    const now = Date.now();
+    if (
+      this.cache.orderHistory && 
+      this.cache.validUntil && 
+      this.cache.validUntil > now
+    ) {
+      return this.cache.orderHistory;
+    }
+    
+    const userId = this.getUserId();
+    const storageKey = `${STORAGE_KEYS.ORDER_HISTORY}${userId}`;
+    const today = new Date().toDateString();
+    
+    // Default fresh history object
+    const defaultHistory: OrderHistory = {
+      activeOrders: [],
+      orderTimestamps: [],
+      dailyOrderCount: 0,
+      lastResetDate: today,
+      deviceIds: [this.getOrCreateDeviceFingerprint()]
+    };
+    
+    try {
+      // Try Telegram CloudStorage first (if available)
+      if (this.telegramCloudStorage) {
+        try {
+          const data = await this.telegramCloudStorage.getItem(storageKey);
+          if (data) {
+            const parsed = JSON.parse(data) as OrderHistory;
+            
+            // Reset daily count if needed
+            if (parsed.lastResetDate !== today) {
+              parsed.dailyOrderCount = 0;
+              parsed.lastResetDate = today;
+              await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(parsed));
+            }
+            
+            // Add current device ID if not already tracked
+            const deviceId = this.getOrCreateDeviceFingerprint();
+            if (!parsed.deviceIds) {
+              parsed.deviceIds = [deviceId];
+            } else if (!parsed.deviceIds.includes(deviceId)) {
+              parsed.deviceIds.push(deviceId);
+              // Keep only the last 5 device IDs
+              if (parsed.deviceIds.length > 5) {
+                parsed.deviceIds = parsed.deviceIds.slice(-5);
+              }
+              await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(parsed));
+            }
+            
+            // Update cache
+            this.cache = {
+              ...this.cache,
+              orderHistory: parsed,
+              lastFetch: now,
+              validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
+            };
+            
+            return parsed;
+          }
+        } catch (cloudError) {
+          console.error('Error reading from Telegram CloudStorage:', cloudError);
+          // Continue to fallback mechanism
+        }
+      }
+      
+      // Fallback to localStorage
+      const localData = localStorage.getItem(storageKey);
+      if (localData) {
+        try {
+          const parsed = JSON.parse(localData) as OrderHistory;
+          
+          // Reset daily count if needed
+          if (parsed.lastResetDate !== today) {
+            parsed.dailyOrderCount = 0;
+            parsed.lastResetDate = today;
+            localStorage.setItem(storageKey, JSON.stringify(parsed));
+          }
+          
+          // Add current device ID if not already tracked
+          const deviceId = this.getOrCreateDeviceFingerprint();
+          if (!parsed.deviceIds) {
+            parsed.deviceIds = [deviceId];
+          } else if (!parsed.deviceIds.includes(deviceId)) {
+            parsed.deviceIds.push(deviceId);
+            // Keep only the last 5 device IDs
+            if (parsed.deviceIds.length > 5) {
+              parsed.deviceIds = parsed.deviceIds.slice(-5);
+            }
+            localStorage.setItem(storageKey, JSON.stringify(parsed));
+          }
+          
+          // Update cache
+          this.cache = {
+            ...this.cache,
+            orderHistory: parsed,
+            lastFetch: now,
+            validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
+          };
+          
+          return parsed;
+        } catch (parseError) {
+          console.error('Error parsing localStorage data:', parseError);
+          // Continue to default return
+        }
+      }
+      
+      // No data found, return and save default history
+      await this.saveOrderHistory(defaultHistory);
+      return defaultHistory;
+    } catch (error) {
+      console.error('Failed to get order history:', error);
+      return defaultHistory;
+    }
+  }
+  
+  /**
+   * Save order history to storage
+   */
+  private async saveOrderHistory(history: OrderHistory): Promise<boolean> {
+    const userId = this.getUserId();
+    const storageKey = `${STORAGE_KEYS.ORDER_HISTORY}${userId}`;
+    
+    try {
+      // Ensure deviceIds exists
+      if (!history.deviceIds) {
+        history.deviceIds = [this.getOrCreateDeviceFingerprint()];
+      }
+      
+      // Update cache
+      this.cache = {
+        ...this.cache,
+        orderHistory: history,
+        lastFetch: Date.now(),
+        validUntil: Date.now() + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
+      };
+      
+      // Try Telegram CloudStorage first
+      if (this.telegramCloudStorage) {
+        try {
+          await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(history));
+          return true;
+        } catch (cloudError) {
+          console.error('Error saving to Telegram CloudStorage:', cloudError);
+          // Continue to fallback
+        }
+      }
+      
+      // Fallback to localStorage
+      localStorage.setItem(storageKey, JSON.stringify(history));
+      return true;
+    } catch (error) {
+      console.error('Failed to save order history:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Get active orders count from Firebase (minimal cost)
+   */
+  private async getActiveOrdersFromFirestore(): Promise<string[]> {
+    try {
+      // Extract Firebase user ID
+      let firebaseUserId = '';
+      const userId = this.getUserId();
+      
+      if (userId.startsWith('local_')) {
+        firebaseUserId = userId.substring(6);
+      } else if (!userId.startsWith('session_')) {
+        firebaseUserId = userId;
+      } else {
+        const localUserId = localStorage.getItem('current_user_id');
+        if (localUserId) {
+          firebaseUserId = localUserId;
+        } else {
+          return []; // Can't determine Firebase user ID
+        }
+      }
+      
+      if (!firebaseUserId) return [];
+      
+      // Import Firebase dynamically to avoid circular dependencies
+      const { db } = await import('../firebase');
+      const { collection, query, where, getDocs } = await import('firebase/firestore');
+      
+      // Query active orders
+      const q = query(
+        collection(db, "orders"),
+        where("user", "==", firebaseUserId),
+        where("status", "in", [
+          'pending', 'accepted', 'picking', 'ready', 'out_for_delivery'
+        ])
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      // Return order IDs
+      return snapshot.docs.map(doc => {
+        const data = doc.data();
+        return data.orderNumber || doc.id;
+      });
+    } catch (error) {
+      console.error('Error getting active orders from Firestore:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * Check if user can place a new order (primary public method)
+   */
+  public async canPlaceOrder(): Promise<RateLimitResult> {
+    // Always check server-side first for most accurate validation
+    return this.checkServerRateLimits();
   }
   
   /**
@@ -514,6 +598,32 @@ export class TelegramRateLimit {
   public async recordOrderPlacement(orderId: string): Promise<boolean> {
     try {
       await this.init();
+      
+      // Clear server cache immediately
+      this.cache.serverRateLimit = undefined;
+      this.cache.serverCacheUntil = undefined;
+      
+      // Record on server-side
+      const userId = this.getUserId();
+      if (userId && !userId.startsWith('session_')) {
+        try {
+          await fetch(`${this.backendUrl}/record-order-placement`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              userId: userId,
+              orderId: orderId
+            })
+          });
+          console.log('✅ Recorded order placement on server');
+        } catch (serverError) {
+          console.error('❌ Failed to record order placement on server:', serverError);
+        }
+      }
+      
+      // Also update local storage as backup
       const history = await this.getOrderHistory();
       const now = Date.now();
       
@@ -548,6 +658,11 @@ export class TelegramRateLimit {
   public async recordOrderCompletion(orderId: string): Promise<boolean> {
     try {
       await this.init();
+      
+      // Clear server cache
+      this.cache.serverRateLimit = undefined;
+      this.cache.serverCacheUntil = undefined;
+      
       const history = await this.getOrderHistory();
       
       // Remove from active orders
@@ -566,6 +681,10 @@ export class TelegramRateLimit {
    */
   public async grantCancellationExemption(orderId: string): Promise<boolean> {
     try {
+      // Clear server cache
+      this.cache.serverRateLimit = undefined;
+      this.cache.serverCacheUntil = undefined;
+      
       const history = await this.getOrderHistory();
       
       // Set expiration to 10 minutes from now
@@ -585,18 +704,56 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Mark exemption token as used after order placement
+   * Mark exemption token as used and apply 5-minute cooldown
    */
   public async useExemptionToken(): Promise<void> {
     try {
+      // Clear server cache
+      this.cache.serverRateLimit = undefined;
+      this.cache.serverCacheUntil = undefined;
+      
+      // Use server-side exemption usage for registered users
+      const userId = this.getUserId();
+      if (userId && !userId.startsWith('session_')) {
+        try {
+          await fetch(`${this.backendUrl}/use-cancellation-exemption`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              userId: userId
+            })
+          });
+          console.log('✅ Used exemption token on server with 5-minute cooldown');
+        } catch (serverError) {
+          console.error('❌ Failed to use exemption token on server:', serverError);
+        }
+      }
+      
+      // Also update local storage
       const history = await this.getOrderHistory();
       if (history.cancelExemptionToken) {
         history.cancelExemptionToken.used = true;
+        
+        // Add 5-minute cooldown period
+        history.postExemptionCooldown = {
+          expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+        };
+        
         await this.saveOrderHistory(history);
       }
     } catch (error) {
       console.error('Error marking exemption token as used:', error);
     }
+  }
+  
+  /**
+   * Clear all caches (useful for testing or when data inconsistency detected)
+   */
+  public clearAllCaches(): void {
+    this.cache = {};
+    console.log('🧹 Cleared all TelegramRateLimit caches');
   }
   
   /**
