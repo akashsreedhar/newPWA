@@ -802,23 +802,18 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Use exemption token
+   * Use exemption token (returns success/failure)
    */
-  public async useExemptionToken(): Promise<void> {
+  public async useExemptionToken(): Promise<boolean> {
     try {
-      // First log current status
       await this.logExemptionStatus();
-      
-      // Clear server cache
       this.cache.serverRateLimit = undefined;
       this.cache.serverCacheUntil = undefined;
-      
-      // Use server-side exemption usage for registered users
+      let serverSuccess = false;
       const userId = this.getUserId();
       if (userId && !userId.startsWith('session_')) {
         try {
           console.log(`🎟️ Calling server to use exemption token for user ${userId}`);
-          
           const response = await fetch(`${this.backendUrl}/use-cancellation-exemption`, {
             method: 'POST',
             headers: {
@@ -828,40 +823,42 @@ export class TelegramRateLimit {
               userId: userId
             })
           });
-          
           if (response.ok) {
             const result = await response.json();
             console.log('✅ Server response for using exemption token:', result);
+            serverSuccess = true;
           } else {
-            console.error(`❌ Server returned error (${response.status}):`, await response.text());
+            const errorText = await response.text();
+            console.error(`❌ Server returned error (${response.status}):`, errorText);
+            if (response.status === 404 || response.status === 400) {
+              return false;
+            }
           }
         } catch (serverError) {
           console.error('❌ Failed to use exemption token on server:', serverError);
         }
       }
-      
-      // Also update local storage
-      const history = await this.getOrderHistory();
-      if (history.cancelExemptionToken) {
-        console.log(`🎟️ Marking local exemption token as used (order ${history.cancelExemptionToken.orderId})`);
-        
-        history.cancelExemptionToken.used = true;
-        
-        // Add 5-minute cooldown period
-        history.postExemptionCooldown = {
-          expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
-        };
-        
-        await this.saveOrderHistory(history);
-        console.log('✅ Updated local exemption token status and added cooldown');
-      } else {
-        console.warn('⚠️ No exemption token found in local storage to mark as used');
+      if (serverSuccess || !userId || userId.startsWith('session_')) {
+        const history = await this.getOrderHistory();
+        if (history.cancelExemptionToken) {
+          console.log(`🎟️ Marking local exemption token as used (order ${history.cancelExemptionToken.orderId})`);
+          history.cancelExemptionToken.used = true;
+          history.postExemptionCooldown = {
+            expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+          };
+          await this.saveOrderHistory(history);
+          console.log('✅ Updated local exemption token status and added cooldown');
+          return true;
+        } else {
+          console.warn('⚠️ No exemption token found in local storage to mark as used');
+          return false;
+        }
       }
-      
-      // Log final status after changes
       await this.logExemptionStatus();
+      return serverSuccess;
     } catch (error) {
       console.error('Error marking exemption token as used:', error);
+      return false;
     }
   }
   

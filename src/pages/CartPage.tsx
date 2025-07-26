@@ -313,17 +313,13 @@ const CartPage: React.FC<CartPageProps> = ({
         setValidatingPrices(false);
         return;
       } else {
-        // If this is using an exemption, mark it as used
-        if (rateLimits.exemptionReason) {
-          await telegramRateLimit.useExemptionToken();
-          setRateLimitStatus({ 
-            checking: false, 
-            allowed: true,
-            exemptionReason: rateLimits.exemptionReason 
-          });
-        } else {
-          setRateLimitStatus({ checking: false, allowed: true });
-        }
+        // FIX: Don't use exemption token yet, just update UI status
+        // The exemption will be used when the order is actually placed
+        setRateLimitStatus({ 
+          checking: false, 
+          allowed: true,
+          exemptionReason: rateLimits.exemptionReason 
+        });
       }
       
       const currentCartItems = latestCartItemsRef.current;
