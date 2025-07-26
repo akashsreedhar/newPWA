@@ -1,18 +1,16 @@
 /**
- * TelegramRateLimit Service
+ * PRODUCTION-READY TelegramRateLimit Service
  * 
  * This service provides rate limiting functionality for the Telegram Mini App,
- * now integrated with server-side validation to prevent bypassing via browser refresh.
- * It ensures users cannot place too many orders in a short period or exceed daily limits.
+ * integrated with server-side validation to prevent bypassing and minimize Firebase usage.
  */
 
-// Business rules for rate limiting (must match backend)
+// Rate limiting configuration (must match backend)
 const RATE_LIMIT_CONFIG = {
-  MAX_ACTIVE_ORDERS: 2,         // Maximum concurrent active orders
-  MIN_ORDER_INTERVAL: 5 * 60,   // Minimum seconds between orders (5 minutes)
-  MAX_DAILY_ORDERS: 20,         // Maximum orders per day
-  SUSPICIOUS_THRESHOLD: 5,      // Orders in 30 minutes that trigger suspicion
-  CACHE_TTL: 10,                // Reduced cache time for more frequent server checks
+  CACHE_TTL_SECONDS: 30,        // Local cache TTL
+  SERVER_CACHE_TTL_SECONDS: 10, // Server response cache TTL
+  RETRY_DELAY_MS: 1000,         // Retry delay for failed API calls
+  MAX_RETRIES: 3                // Maximum number of retries
 };
 
 // Storage keys
@@ -46,6 +44,14 @@ interface RateLimitResult {
   activeOrders?: number;        // Current active order count
   exemptionReason?: string;     // Reason for exemption if applicable
   cooldownType?: string;        // Type of cooldown (post_exemption, frequency, etc.)
+  dailyCount?: number;          // Current daily order count
+  remainingToday?: number;      // Remaining orders allowed today
+  fallback?: boolean;           // Whether this is a fallback response
+  warning?: string;             // Warning message if any
+  exemption?: {                 // Exemption details if applicable
+    orderId: string;            // Order ID that was exempted
+    expiresAt: number;          // When exemption expires
+  }
 }
 
 /**
@@ -59,7 +65,7 @@ export class TelegramRateLimit {
   private telegramCloudStorage: any = null;
   private backendUrl: string = 'https://supermarket-backend-ytrh.onrender.com';
   
-  // In-memory cache to minimize storage operations
+  // In-memory cache to minimize storage and API operations
   private cache: {
     orderHistory?: OrderHistory;
     lastFetch?: number;
@@ -204,17 +210,20 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Check rate limits with server-side validation (primary method)
+   * Check if user can place a new order (primary public method)
+   * Uses server-side validation with client-side fallback
    */
-  private async checkServerRateLimits(): Promise<RateLimitResult> {
+  public async canPlaceOrder(): Promise<RateLimitResult> {
     try {
+      await this.init();
+      
       const userId = this.getUserId();
       if (!userId || userId.startsWith('session_')) {
-        // Fallback to local checks for session users
+        // For session users, always allow with local checks as fallback
         return this.checkLocalRateLimits();
       }
       
-      // Check server cache first
+      // Check cache first for performance
       const now = Date.now();
       if (
         this.cache.serverRateLimit && 
@@ -224,36 +233,64 @@ export class TelegramRateLimit {
         return this.cache.serverRateLimit;
       }
       
-      const response = await fetch(`${this.backendUrl}/check-rate-limits?userId=${encodeURIComponent(userId)}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      // Make server request with retry logic
+      let retries = 0;
+      let lastError: any = null;
       
-      if (!response.ok) {
-        console.error('Server rate limit check failed:', response.status);
-        // Fallback to local checks
-        return this.checkLocalRateLimits();
+      while (retries < RATE_LIMIT_CONFIG.MAX_RETRIES) {
+        try {
+          const response = await fetch(
+            `${this.backendUrl}/check-rate-limits?userId=${encodeURIComponent(userId)}`,
+            {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            }
+          );
+          
+          if (!response.ok) {
+            console.error(`Server rate limit check failed (${response.status}): ${response.statusText}`);
+            retries++;
+            
+            if (retries >= RATE_LIMIT_CONFIG.MAX_RETRIES) {
+              return this.checkLocalRateLimits();
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.RETRY_DELAY_MS));
+            continue;
+          }
+          
+          const result: RateLimitResult = await response.json();
+          
+          // Cache server result
+          this.cache.serverRateLimit = result;
+          this.cache.serverCacheUntil = now + (RATE_LIMIT_CONFIG.SERVER_CACHE_TTL_SECONDS * 1000);
+          
+          console.log('✅ Server rate limit check:', result);
+          return result;
+        } catch (error) {
+          lastError = error;
+          console.error(`Error checking server rate limits (retry ${retries + 1}/${RATE_LIMIT_CONFIG.MAX_RETRIES}):`, error);
+          retries++;
+          
+          if (retries >= RATE_LIMIT_CONFIG.MAX_RETRIES) {
+            break;
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_CONFIG.RETRY_DELAY_MS));
+        }
       }
       
-      const result: RateLimitResult = await response.json();
-      
-      // Cache server result for 10 seconds
-      this.cache.serverRateLimit = result;
-      this.cache.serverCacheUntil = now + 10000;
-      
-      console.log('✅ Server rate limit check:', result);
-      return result;
-    } catch (error) {
-      console.error('Error checking server rate limits:', error);
-      // Fallback to local checks
+      console.error('All server rate limit check retries failed:', lastError);
       return this.checkLocalRateLimits();
+    } catch (error) {
+      console.error('Error in canPlaceOrder:', error);
+      return { allowed: true, fallback: true };
     }
   }
   
   /**
    * Fallback local rate limit checking
+   * Used when server validation is unavailable
    */
   private async checkLocalRateLimits(): Promise<RateLimitResult> {
     try {
@@ -283,7 +320,8 @@ export class TelegramRateLimit {
           allowed: false,
           reason: `Please wait ${minutes} minute${minutes > 1 ? 's' : ''} after using exemption before placing another order.`,
           retryAfter: remainingSeconds,
-          cooldownType: 'post_exemption'
+          cooldownType: 'post_exemption',
+          fallback: true
         };
       }
       
@@ -296,7 +334,12 @@ export class TelegramRateLimit {
         // Allow order placement regardless of time interval
         return { 
           allowed: true,
-          exemptionReason: 'Recent order cancellation'
+          exemptionReason: 'Recent order cancellation',
+          exemption: {
+            orderId: history.cancelExemptionToken.orderId,
+            expiresAt: history.cancelExemptionToken.expiresAt
+          },
+          fallback: true
         };
       }
       
@@ -308,23 +351,24 @@ export class TelegramRateLimit {
       history.activeOrders = activeOrderIds;
       await this.saveOrderHistory(history);
       
-      // Check active orders limit
-      if (activeOrdersCount >= RATE_LIMIT_CONFIG.MAX_ACTIVE_ORDERS) {
+      // Check active orders limit (max 2 active orders)
+      if (activeOrdersCount >= 2) {
         return {
           allowed: false,
           reason: `You have ${activeOrdersCount} active orders. Please wait for them to complete before placing a new order.`,
-          activeOrders: activeOrdersCount
+          activeOrders: activeOrdersCount,
+          fallback: true
         };
       }
       
-      // 2. Check time interval between orders
+      // 2. Check time interval between orders (5 minutes minimum)
       const recentOrders = history.orderTimestamps.filter(
-        time => now - time < RATE_LIMIT_CONFIG.MIN_ORDER_INTERVAL * 1000
+        time => now - time < 5 * 60 * 1000
       );
       
       if (recentOrders.length > 0) {
         const oldestRecent = Math.min(...recentOrders);
-        const waitTimeMs = (RATE_LIMIT_CONFIG.MIN_ORDER_INTERVAL * 1000) - (now - oldestRecent);
+        const waitTimeMs = (5 * 60 * 1000) - (now - oldestRecent);
         const waitTimeSeconds = Math.ceil(waitTimeMs / 1000);
         const waitMinutes = Math.ceil(waitTimeSeconds / 60);
         
@@ -332,43 +376,34 @@ export class TelegramRateLimit {
           allowed: false,
           reason: `Please wait ${waitMinutes} minute${waitMinutes > 1 ? 's' : ''} between orders.`,
           retryAfter: waitTimeSeconds,
-          activeOrders: activeOrdersCount
+          activeOrders: activeOrdersCount,
+          fallback: true
         };
       }
       
-      // 3. Check daily limit
-      if (history.dailyOrderCount >= RATE_LIMIT_CONFIG.MAX_DAILY_ORDERS) {
+      // 3. Check daily limit (max 20 orders per day)
+      if (history.dailyOrderCount >= 20) {
         return {
           allowed: false,
-          reason: `You've reached the daily limit of ${RATE_LIMIT_CONFIG.MAX_DAILY_ORDERS} orders. Please try again tomorrow.`,
+          reason: `You've reached the daily limit of 20 orders. Please try again tomorrow.`,
           retryAfter: this.getSecondsUntilMidnight(),
-          activeOrders: activeOrdersCount
-        };
-      }
-      
-      // 4. Check suspicious activity (many orders in short time)
-      const last30MinOrders = history.orderTimestamps.filter(
-        time => now - time < 30 * 60 * 1000
-      );
-      
-      if (last30MinOrders.length >= RATE_LIMIT_CONFIG.SUSPICIOUS_THRESHOLD) {
-        return {
-          allowed: false,
-          reason: 'Too many orders in a short time period. Please try again later.',
-          retryAfter: 30 * 60, // 30 minutes
-          activeOrders: activeOrdersCount
+          activeOrders: activeOrdersCount,
+          fallback: true
         };
       }
       
       // All checks passed
       return {
         allowed: true,
-        activeOrders: activeOrdersCount
+        activeOrders: activeOrdersCount,
+        dailyCount: history.dailyOrderCount,
+        remainingToday: 20 - history.dailyOrderCount,
+        fallback: true
       };
     } catch (error) {
       console.error('Error checking local rate limits:', error);
       // Fail-safe: allow order if checks fail
-      return { allowed: true };
+      return { allowed: true, fallback: true };
     }
   }
   
@@ -432,7 +467,7 @@ export class TelegramRateLimit {
               ...this.cache,
               orderHistory: parsed,
               lastFetch: now,
-              validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
+              validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL_SECONDS * 1000)
             };
             
             return parsed;
@@ -474,7 +509,7 @@ export class TelegramRateLimit {
             ...this.cache,
             orderHistory: parsed,
             lastFetch: now,
-            validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
+            validUntil: now + (RATE_LIMIT_CONFIG.CACHE_TTL_SECONDS * 1000)
           };
           
           return parsed;
@@ -511,7 +546,7 @@ export class TelegramRateLimit {
         ...this.cache,
         orderHistory: history,
         lastFetch: Date.now(),
-        validUntil: Date.now() + (RATE_LIMIT_CONFIG.CACHE_TTL * 1000)
+        validUntil: Date.now() + (RATE_LIMIT_CONFIG.CACHE_TTL_SECONDS * 1000)
       };
       
       // Try Telegram CloudStorage first
@@ -535,7 +570,7 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Get active orders count from Firebase (minimal cost)
+   * Get active orders from Firebase (minimal cost)
    */
   private async getActiveOrdersFromFirestore(): Promise<string[]> {
     try {
@@ -585,14 +620,6 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Check if user can place a new order (primary public method)
-   */
-  public async canPlaceOrder(): Promise<RateLimitResult> {
-    // Always check server-side first for most accurate validation
-    return this.checkServerRateLimits();
-  }
-  
-  /**
    * Record a new order placement
    */
   public async recordOrderPlacement(orderId: string): Promise<boolean> {
@@ -603,7 +630,7 @@ export class TelegramRateLimit {
       this.cache.serverRateLimit = undefined;
       this.cache.serverCacheUntil = undefined;
       
-      // Record on server-side
+      // Record on server-side for registered users
       const userId = this.getUserId();
       if (userId && !userId.startsWith('session_')) {
         try {
@@ -704,7 +731,7 @@ export class TelegramRateLimit {
   }
   
   /**
-   * Mark exemption token as used and apply 5-minute cooldown
+   * Use exemption token
    */
   public async useExemptionToken(): Promise<void> {
     try {
@@ -792,14 +819,14 @@ export class TelegramRateLimit {
    */
   public static formatTimeRemaining(seconds: number): string {
     if (seconds < 60) {
-      return `${seconds} seconds`;
+      return `${seconds} second${seconds !== 1 ? 's' : ''}`;
     } else if (seconds < 3600) {
       const minutes = Math.ceil(seconds / 60);
-      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
     } else {
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.ceil((seconds % 3600) / 60);
-      return `${hours} hour${hours > 1 ? 's' : ''} ${minutes > 0 ? `and ${minutes} minute${minutes > 1 ? 's' : ''}` : ''}`;
+      return `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` and ${minutes} minute${minutes !== 1 ? 's' : ''}` : ''}`;
     }
   }
 }
