@@ -188,7 +188,8 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   };
 
   // Robust phone request function: handle cancelled immediately
- const requestPhone = async () => {
+ // Robust phone request function: handle cancelled immediately
+const requestPhone = async () => {
   if (isProcessing || phoneRequestActiveRef.current) return;
 
   setIsProcessing(true);
@@ -232,10 +233,14 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         try {
           console.log('[WebApp] receiveEvent caught:', event);
           const data = event?.data;
+          
+          // Handle cancellation immediately
           if (data?.type === 'phone_requested' && data?.status === 'cancelled') {
             console.warn('🚫 User cancelled phone sharing.');
-            handleError('You cancelled phone number sharing. Please allow access.');
+            handleError('Phone number sharing was cancelled. Please try again and allow access to continue.');
+            return; // Exit immediately
           }
+          
           if (
             data?.type === 'custom_method_invoked' &&
             typeof data.result === 'string' &&
@@ -260,23 +265,27 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       console.log('📱 Requesting contact from Telegram...');
       tgWebApp.requestContact((result: any) => {
         console.log('📞 Contact callback received:', !!result);
-        // here: DO NOT call handleSuccess UNLESS result.phone_number is present
+        // Check if we already resolved (e.g., due to cancellation)
+        if (phoneResolvedRef.current) {
+          console.log('ℹ️ Promise already resolved, ignoring callback');
+          return;
+        }
+        
         if (result && result.phone_number) {
           console.log('✅ Got phone from direct callback:', result.phone_number);
           handleSuccess(result.phone_number);
           return;
         }
-        // Don't clean up yet, keep listening for receiveEvent
+        
         console.log('ℹ️ No direct phone in callback, waiting for custom method events...');
       });
 
       timeoutId = setTimeout(() => {
         if (!phoneResolvedRef.current) {
           console.warn('⏰ Phone request timed out after 25 seconds');
-          handleError('Contact request timed out');
+          handleError('Phone number request timed out. Please try again.');
         }
       }, 25000);
-
     });
 
     console.log('🎉 Successfully retrieved phone number:', phoneNumber);
@@ -293,7 +302,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     phoneRequestActiveRef.current = false;
   }
 };
-
 
   // Submit registration data to backend
   const submitRegistration = async (phoneNumber?: string, locationData?: any) => {
