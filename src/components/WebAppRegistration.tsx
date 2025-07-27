@@ -191,6 +191,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
  // Robust phone request function: handle cancelled immediately
 // Robust phone request function: handle all event types properly
 // Robust phone request function: monitor WebApp events directly
+// Robust phone request function: real-time log interception
 const requestPhone = async () => {
   if (isProcessing || phoneRequestActiveRef.current) return;
 
@@ -211,14 +212,13 @@ const requestPhone = async () => {
   try {
     const phoneNumber = await new Promise<string>((resolve, reject) => {
       let timeoutId: NodeJS.Timeout;
-      let checkInterval: NodeJS.Timeout;
+      let consoleLogInterceptor: any = null;
 
       const handleSuccess = (phone: string) => {
         if (phoneResolvedRef.current) return;
         phoneResolvedRef.current = true;
         console.log('✅ Phone request successful:', phone);
         if (timeoutId) clearTimeout(timeoutId);
-        if (checkInterval) clearInterval(checkInterval);
         cleanup();
         resolve(phone);
       };
@@ -228,27 +228,32 @@ const requestPhone = async () => {
         phoneResolvedRef.current = true;
         console.error('❌ Phone request failed:', errorMsg);
         if (timeoutId) clearTimeout(timeoutId);
-        if (checkInterval) clearInterval(checkInterval);
         cleanup();
         reject(new Error(errorMsg));
       };
 
-      // Monitor for contact data in console logs (since receiveEvent isn't working as DOM event)
-      let lastLogCount = debugLogs.length;
-      const monitorLogs = () => {
-        const newLogs = debugLogs.slice(lastLogCount);
-        lastLogCount = debugLogs.length;
+      // Intercept console.log in real-time to catch contact data immediately
+      const setupConsoleInterception = () => {
+        const originalConsoleLog = console.log;
         
-        for (const log of newLogs) {
+        consoleLogInterceptor = (...args: any[]) => {
+          // Call original console.log first
+          originalConsoleLog.apply(console, args);
+          
+          // Check for contact data in the logged message
+          const message = args.map(arg =>
+            typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+          ).join(' ');
+          
           // Look for custom_method_invoked logs with contact data
-          if (log.includes('custom_method_invoked') && log.includes('contact=')) {
-            console.log('🎯 Found contact data in debug logs!');
+          if (message.includes('custom_method_invoked') && message.includes('contact=')) {
+            console.log('🎯 Found contact data in real-time log interception!');
             try {
-              // Extract the result from the log
-              const resultMatch = log.match(/"result":"([^"]+)"/);
+              // Extract the result from the message
+              const resultMatch = message.match(/"result":"([^"]+)"/);
               if (resultMatch && resultMatch[1]) {
                 const result = resultMatch[1];
-                console.log('📱 Extracted result from log:', result);
+                console.log('📱 Extracted result from intercepted log:', result);
                 const phone = extractPhoneNumber(result);
                 if (phone) {
                   handleSuccess(phone);
@@ -256,20 +261,28 @@ const requestPhone = async () => {
                 }
               }
             } catch (err) {
-              console.error('Error parsing contact from log:', err);
+              console.error('Error parsing contact from intercepted log:', err);
             }
           }
           
           // Handle cancellation
-          if (log.includes('phone_requested') && log.includes('"status":"cancelled"')) {
-            console.warn('🚫 User cancelled phone sharing (from logs).');
+          if (message.includes('phone_requested') && message.includes('"status":"cancelled"')) {
+            console.warn('🚫 User cancelled phone sharing (from real-time interception).');
             handleError('Phone number sharing was cancelled. Please try again and allow access to continue.');
             return;
           }
-        }
+        };
+        
+        // Replace console.log temporarily
+        console.log = consoleLogInterceptor;
+        
+        return () => {
+          // Restore original console.log
+          console.log = originalConsoleLog;
+        };
       };
 
-      // Enhanced event handler for multiple event patterns
+      // Enhanced event handler for multiple event patterns (keep as backup)
       const globalEventHandler = (event: any) => {
         try {
           console.log('[WebApp] receiveEvent handler called:', JSON.stringify(event));
@@ -307,28 +320,28 @@ const requestPhone = async () => {
         }
       };
 
-      // Try multiple event listener approaches
+      // Setup both console interception and event listeners
       const addEventListener = () => {
-        // Standard DOM event
+        // Setup real-time console interception (primary method)
+        const restoreConsole = setupConsoleInterception();
+        
+        // Standard DOM event (backup method)
         window.addEventListener('receiveEvent', globalEventHandler);
         
-        // Also try document level
+        // Also try document level (backup method)
         document.addEventListener('receiveEvent', globalEventHandler);
         
-        // Try custom event pattern that some Telegram versions use
+        // Try custom event pattern that some Telegram versions use (backup method)
         const telegramEventHandler = (e: any) => {
           globalEventHandler({ data: e.detail || e.data });
         };
         window.addEventListener('TelegramWebviewReceiveEvent', telegramEventHandler);
         
-        // Monitor console logs for contact data (fallback method)
-        checkInterval = setInterval(monitorLogs, 500);
-        
         return () => {
+          restoreConsole();
           window.removeEventListener('receiveEvent', globalEventHandler);
           document.removeEventListener('receiveEvent', globalEventHandler);
           window.removeEventListener('TelegramWebviewReceiveEvent', telegramEventHandler);
-          if (checkInterval) clearInterval(checkInterval);
         };
       };
 
@@ -362,9 +375,9 @@ const requestPhone = async () => {
           }
         }
         
-        // If callback is truthy but no direct phone, it might come via events or logs
+        // If callback is truthy but no direct phone, it might come via logs
         if (result) {
-          console.log('ℹ️ Callback returned truthy value, monitoring for contact data...');
+          console.log('ℹ️ Callback returned truthy value, monitoring for contact data via console interception...');
           // Reduce timeout since we got a positive callback
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -373,20 +386,20 @@ const requestPhone = async () => {
                 console.warn('⏰ Phone request timed out after callback');
                 handleError('Phone number request timed out. Please try again.');
               }
-            }, 8000); // Shorter timeout after positive callback
+            }, 5000); // Even shorter timeout with real-time interception
           }
         } else {
-          console.log('ℹ️ No direct phone in callback, waiting for events or monitoring logs...');
+          console.log('ℹ️ No direct phone in callback, waiting for contact data via console interception...');
         }
       });
 
       // Set initial timeout
       timeoutId = setTimeout(() => {
         if (!phoneResolvedRef.current) {
-          console.warn('⏰ Phone request timed out after 20 seconds');
+          console.warn('⏰ Phone request timed out after 15 seconds');
           handleError('Phone number request timed out. Please try again.');
         }
-      }, 20000);
+      }, 15000); // Shorter timeout with better detection
     });
 
     console.log('🎉 Successfully retrieved phone number:', phoneNumber);
