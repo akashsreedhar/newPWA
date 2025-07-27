@@ -187,7 +187,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   };
 
-  // FIXED phone request function - only listen for receiveEvent and check type
+  // Robust phone request function: handle cancelled immediately
   const requestPhone = async () => {
     if (isProcessing || phoneRequestActiveRef.current) return;
 
@@ -227,10 +227,14 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           reject(new Error(errorMsg));
         };
 
-        // Only listen for receiveEvent and check type
-        const globalEventHandler = (event: Event) => {
+        // Listen for receiveEvent (phone_requested or custom_method_invoked)
+        const globalEventHandler = (event: any) => {
           try {
-            const data = (event as CustomEvent).detail;
+            const data = event?.detail ?? event?.data;
+            if (data?.type === 'phone_requested' && data?.status === 'cancelled') {
+              console.warn('🚫 User cancelled phone sharing.');
+              handleError('You cancelled phone number sharing. Please allow access.');
+            }
             if (data?.type === 'custom_method_invoked' && typeof data.result === 'string' && data.result.includes('contact=')) {
               console.log('🎯 Found contact data in receiveEvent (type custom_method_invoked)');
               const phone = extractPhoneNumber(data.result);
