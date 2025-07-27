@@ -33,7 +33,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   
   // Use refs to track state across async operations
   const contactRequestCompletedRef = useRef(false);
-  const customMethodEventsRef = useRef<Array<(e: any) => void>>([]);
 
   // Access Telegram WebApp
   const tgWebApp = window.Telegram?.WebApp;
@@ -86,24 +85,35 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   }, [tgWebApp]);
 
-  // Helper function to clean up all custom method event listeners
-  const cleanupCustomMethodListeners = () => {
-    customMethodEventsRef.current.forEach(handler => {
-      window.removeEventListener('custom_method_invoked', handler);
-    });
-    customMethodEventsRef.current = [];
-  };
-
-  // Extract phone number from URL-encoded response
+  // Extract phone number from URL-encoded response with improved error handling
   const extractPhoneNumber = (result: string): string | null => {
     try {
+      console.log('Extracting phone from:', result.substring(0, 50) + '...');
+      
       if (result.includes('contact=')) {
+        // Extract the contact parameter
         const contactParam = result.split('contact=')[1].split('&')[0];
+        console.log('Contact param (encoded):', contactParam);
+        
+        // Decode the URL-encoded JSON
         const decodedContact = decodeURIComponent(contactParam);
+        console.log('Decoded contact JSON:', decodedContact);
+        
+        // Parse the JSON to get the contact object
         const contactData = JSON.parse(decodedContact);
-        return contactData?.phone_number || null;
+        console.log('Parsed contact data:', contactData);
+        
+        // Extract and return the phone number
+        if (contactData && contactData.phone_number) {
+          return contactData.phone_number;
+        } else {
+          console.warn('No phone_number found in contact data');
+          return null;
+        }
+      } else {
+        console.log('No contact= parameter found in result');
+        return null;
       }
-      return null;
     } catch (error) {
       console.error('Failed to parse contact data:', error);
       return null;
@@ -187,7 +197,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   };
 
-  // Much simpler and more reliable phone number request function
+  // Direct approach to handle contact sharing
   const requestPhone = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -204,75 +214,113 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     contactRequestCompletedRef.current = false;
     
     try {
-      // Create a promise that will resolve when we get the phone number from any source
-      const phoneNumberPromise = new Promise<string>((resolve, reject) => {
-        // Setup a listener for the custom_method_invoked event
-        const handleCustomMethodEvent = (event: any) => {
-          const data = event.detail;
-          if (data && data.result && typeof data.result === 'string') {
-            const phoneNumber = extractPhoneNumber(data.result);
-            if (phoneNumber && !contactRequestCompletedRef.current) {
-              contactRequestCompletedRef.current = true;
-              console.log('Successfully extracted phone number from event');
-              resolve(phoneNumber);
-            }
+      // Store event listeners for cleanup
+      let customMethodHandler: ((e: any) => void) | null = null;
+      
+      // Create a promise that will resolve when we get the phone number
+      const phoneNumber = await new Promise<string>((resolve, reject) => {
+        // Flag to track if we've already resolved
+        let resolved = false;
+        
+        // Function to handle successful phone retrieval
+        const resolveWithPhone = (phone: string) => {
+          if (!resolved) {
+            resolved = true;
+            contactRequestCompletedRef.current = true;
+            resolve(phone);
           }
         };
         
-        // Add the event listener
-        window.addEventListener('custom_method_invoked', handleCustomMethodEvent);
-        customMethodEventsRef.current.push(handleCustomMethodEvent);
+        // Handle custom method events for phone data
+        customMethodHandler = (event: any) => {
+          try {
+            const data = event.detail;
+            console.log('Custom method event received:', data?.req_id || 'unknown request ID');
+            
+            if (data?.result && typeof data.result === 'string') {
+              const extractedPhone = extractPhoneNumber(data.result);
+              console.log('Extracted phone number:', extractedPhone);
+              
+              if (extractedPhone) {
+                resolveWithPhone(extractedPhone);
+              }
+            }
+          } catch (err) {
+            console.error('Error in custom method handler:', err);
+          }
+        };
         
-        // Request the phone directly
-        tgWebApp.requestContact((result) => {
+        // Add event listener for custom method invocations
+        window.addEventListener('custom_method_invoked', customMethodHandler);
+        
+        // Request contact from Telegram
+        tgWebApp.requestContact((result: any) => {
           console.log('Contact callback received:', result ? 'with data' : 'no data');
           
-          if (result && result.phone_number && !contactRequestCompletedRef.current) {
-            contactRequestCompletedRef.current = true;
-            console.log('Successfully received phone number from callback');
-            resolve(result.phone_number);
+          // Direct callback handling
+          if (result && result.phone_number) {
+            console.log('Phone number in callback:', result.phone_number);
+            resolveWithPhone(result.phone_number);
+          }
+          
+          // If callback didn't have the phone, try the custom method
+          // This runs regardless to ensure we cover all bases
+          try {
+            setTimeout(() => {
+              if (!resolved) {
+                console.log('Requesting contact via custom method');
+                const reqId = 'phone_' + Date.now().toString(36);
+                tgWebApp.invokeCustomMethod('getRequestedContact', {}, reqId);
+              }
+            }, 1000);
+          } catch (err) {
+            console.error('Error invoking custom method:', err);
           }
         });
         
-        // Set a timeout to try the custom method approach
+        // Set timeout to reject if we don't get a phone number
         setTimeout(() => {
-          if (!contactRequestCompletedRef.current) {
-            console.log('Trying direct custom method for phone number');
+          if (!resolved) {
+            // One last attempt
             try {
-              tgWebApp.invokeCustomMethod('getRequestedContact', {});
+              console.log('Final attempt to get phone number');
+              tgWebApp.invokeCustomMethod('getRequestedContact', {}, 'final_' + Date.now().toString(36));
+              
+              // Give it a moment to process
+              setTimeout(() => {
+                if (!resolved) {
+                  reject(new Error('Contact request timed out'));
+                }
+              }, 3000);
             } catch (err) {
-              console.error('Error invoking custom method:', err);
+              reject(new Error('Failed to get phone number'));
             }
           }
-        }, 1000);
-        
-        // Final timeout
-        setTimeout(() => {
-          if (!contactRequestCompletedRef.current) {
-            cleanupCustomMethodListeners();
-            reject(new Error('Contact request timed out'));
-          }
-        }, 10000);
+        }, 15000); // Increased timeout
       });
       
-      // Wait for the phone number
-      const phoneNumber = await phoneNumberPromise;
+      // Clean up event listener
+      if (customMethodHandler) {
+        window.removeEventListener('custom_method_invoked', customMethodHandler);
+      }
       
-      // Clean up event listeners
-      cleanupCustomMethodListeners();
-      
-      // Continue with the registration
-      console.log('Phone number obtained:', phoneNumber);
+      // If we got here, we successfully got a phone number
+      console.log('Successfully retrieved phone number:', phoneNumber);
       setPhone(phoneNumber);
+      
+      // Proceed with registration
       submitRegistration(phoneNumber, location);
       
     } catch (error: any) {
       console.error('Phone error:', error);
-      setPhoneError(error.message || 'Failed to get phone number. Please try again.');
-      setIsProcessing(false);
+      let errorMessage = 'Failed to get phone number. Please try again.';
       
-      // Clean up event listeners on error
-      cleanupCustomMethodListeners();
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      setPhoneError(errorMessage);
+      setIsProcessing(false);
     }
   };
 
@@ -440,13 +488,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         );
     }
   };
-
-  // Clean up event listeners when component unmounts
-  useEffect(() => {
-    return () => {
-      cleanupCustomMethodListeners();
-    };
-  }, []);
 
   return (
     <div className="max-w-md mx-auto my-4 bg-white rounded-xl shadow-md overflow-hidden">
