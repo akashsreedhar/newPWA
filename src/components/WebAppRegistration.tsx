@@ -189,6 +189,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
 
   // Robust phone request function: handle cancelled immediately
  // Robust phone request function: handle cancelled immediately
+// Robust phone request function: handle all event types properly
 const requestPhone = async () => {
   if (isProcessing || phoneRequestActiveRef.current) return;
 
@@ -228,58 +229,114 @@ const requestPhone = async () => {
         reject(new Error(errorMsg));
       };
 
-      // Attach handler BEFORE requesting contact!
+      // Enhanced event handler for multiple event patterns
       const globalEventHandler = (event: any) => {
         try {
-          console.log('[WebApp] receiveEvent caught:', event);
-          const data = event?.data;
+          console.log('[WebApp] receiveEvent caught:', JSON.stringify(event));
+          const data = event?.data || event?.detail;
           
           // Handle cancellation immediately
           if (data?.type === 'phone_requested' && data?.status === 'cancelled') {
             console.warn('🚫 User cancelled phone sharing.');
             handleError('Phone number sharing was cancelled. Please try again and allow access to continue.');
-            return; // Exit immediately
+            return;
           }
           
-          if (
-            data?.type === 'custom_method_invoked' &&
-            typeof data.result === 'string' &&
-            data.result.includes('contact=')
-          ) {
-            console.log('🎯 Found contact data in receiveEvent (type custom_method_invoked)');
-            const phone = extractPhoneNumber(data.result);
-            if (phone) handleSuccess(phone);
+          // Handle successful phone request
+          if (data?.type === 'phone_requested' && data?.status === 'sent') {
+            console.log('📲 Phone request was sent, waiting for contact data...');
+            return;
           }
+          
+          // Handle custom method invoked with contact data
+          if (data?.type === 'custom_method_invoked' && data?.result) {
+            console.log('🎯 Found contact data in receiveEvent (type custom_method_invoked)');
+            console.log('Raw result:', data.result);
+            
+            if (typeof data.result === 'string' && data.result.includes('contact=')) {
+              const phone = extractPhoneNumber(data.result);
+              if (phone) {
+                handleSuccess(phone);
+                return;
+              }
+            }
+          }
+          
         } catch (err) {
-          console.error('Error processing global custom method event:', err);
+          console.error('Error processing receiveEvent:', err);
         }
       };
 
-      window.addEventListener('receiveEvent', globalEventHandler);
-
-      const cleanup = () => {
-        window.removeEventListener('receiveEvent', globalEventHandler);
+      // Try multiple event listener approaches
+      const addEventListener = () => {
+        // Standard DOM event
+        window.addEventListener('receiveEvent', globalEventHandler);
+        
+        // Also try document level
+        document.addEventListener('receiveEvent', globalEventHandler);
+        
+        // Try custom event pattern that some Telegram versions use
+        const telegramEventHandler = (e: any) => {
+          globalEventHandler({ data: e.detail || e.data });
+        };
+        window.addEventListener('TelegramWebviewReceiveEvent', telegramEventHandler);
+        
+        return () => {
+          window.removeEventListener('receiveEvent', globalEventHandler);
+          document.removeEventListener('receiveEvent', globalEventHandler);
+          window.removeEventListener('TelegramWebviewReceiveEvent', telegramEventHandler);
+        };
       };
 
-      // Only now call requestContact!
+      const cleanup = addEventListener();
+
+      // Enhanced contact request handling
       console.log('📱 Requesting contact from Telegram...');
       tgWebApp.requestContact((result: any) => {
-        console.log('📞 Contact callback received:', !!result);
+        console.log('📞 Contact callback received:', JSON.stringify(result));
+        
         // Check if we already resolved (e.g., due to cancellation)
         if (phoneResolvedRef.current) {
           console.log('ℹ️ Promise already resolved, ignoring callback');
           return;
         }
         
+        // Direct phone number in callback
         if (result && result.phone_number) {
           console.log('✅ Got phone from direct callback:', result.phone_number);
           handleSuccess(result.phone_number);
           return;
         }
         
-        console.log('ℹ️ No direct phone in callback, waiting for custom method events...');
+        // Check if result is a string with contact data
+        if (typeof result === 'string' && result.includes('contact=')) {
+          console.log('✅ Got phone from string callback');
+          const phone = extractPhoneNumber(result);
+          if (phone) {
+            handleSuccess(phone);
+            return;
+          }
+        }
+        
+        // If callback is truthy but no direct phone, it might come via events
+        if (result) {
+          console.log('ℹ️ Callback returned truthy value, waiting for events...');
+          // Reduce timeout since we got a positive callback
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+              if (!phoneResolvedRef.current) {
+                console.warn('⏰ Phone request timed out after callback');
+                handleError('Phone number request timed out. Please try again.');
+              }
+            }, 10000); // Shorter timeout after positive callback
+          }
+        } else {
+          console.log('ℹ️ No direct phone in callback, waiting for custom method events...');
+        }
       });
 
+      // Set initial timeout
       timeoutId = setTimeout(() => {
         if (!phoneResolvedRef.current) {
           console.warn('⏰ Phone request timed out after 25 seconds');
@@ -302,7 +359,6 @@ const requestPhone = async () => {
     phoneRequestActiveRef.current = false;
   }
 };
-
   // Submit registration data to backend
   const submitRegistration = async (phoneNumber?: string, locationData?: any) => {
     setStep(RegistrationStep.SUBMITTING);
