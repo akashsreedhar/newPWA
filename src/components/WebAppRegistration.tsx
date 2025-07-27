@@ -197,7 +197,10 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       }
 
       setLocation(locationData);
-      setStep(RegistrationStep.PHONE);
+      // Auto advance to next step after success animation
+      setTimeout(() => {
+        setStep(RegistrationStep.PHONE);
+      }, 1500);
       setIsProcessing(false);
 
     } catch (error: any) {
@@ -420,7 +423,10 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
 
       console.log('🎉 Successfully retrieved phone number:', phoneNumber);
       setPhone(phoneNumber);
-      setStep(RegistrationStep.NAME);
+      // Auto advance to next step after success animation
+      setTimeout(() => {
+        setStep(RegistrationStep.NAME);
+      }, 1500);
       setIsProcessing(false);
 
     } catch (error: any) {
@@ -479,247 +485,326 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   };
 
-  // Step component for better organization
-  const StepIndicator = ({ stepNum, isActive, isCompleted, title }: { stepNum: number, isActive: boolean, isCompleted: boolean, title: string }) => (
-    <div className={`flex items-center mb-8 transition-all duration-500 ${isActive ? 'scale-105' : ''}`}>
-      <div className={`relative flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-500 ${
-        isCompleted ? 'bg-green-500 border-green-500 shadow-lg shadow-green-200' :
-        isActive ? 'bg-teal-600 border-teal-600 shadow-lg shadow-teal-200 animate-pulse' :
-        'bg-gray-200 border-gray-300'
+  // Enhanced step indicator with detailed status
+  const StepIndicator = ({ stepNum, isActive, isCompleted, title, details }: { 
+    stepNum: number, 
+    isActive: boolean, 
+    isCompleted: boolean, 
+    title: string,
+    details?: string 
+  }) => (
+    <div className={`flex items-center p-4 mb-4 rounded-xl border transition-all duration-500 ${
+      isCompleted ? 'bg-green-50 border-green-200' :
+      isActive ? 'bg-blue-50 border-blue-200 shadow-md' :
+      'bg-gray-50 border-gray-200'
+    }`}>
+      <div className={`relative flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all duration-500 ${
+        isCompleted ? 'bg-green-500 border-green-500' :
+        isActive ? 'bg-blue-500 border-blue-500' :
+        'bg-gray-300 border-gray-300'
       }`}>
         {isCompleted ? (
-          <svg className="w-6 h-6 text-white animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         ) : (
-          <span className={`text-lg font-bold ${isActive || isCompleted ? 'text-white' : 'text-gray-500'}`}>
+          <span className={`text-sm font-bold ${isActive || isCompleted ? 'text-white' : 'text-gray-500'}`}>
             {stepNum}
           </span>
         )}
-        {isActive && (
-          <div className="absolute inset-0 rounded-full bg-teal-600 animate-ping opacity-75"></div>
-        )}
       </div>
-      <div className={`ml-4 transition-all duration-300 ${isActive ? 'transform translate-x-2' : ''}`}>
-        <h3 className={`font-semibold ${isActive ? 'text-teal-600 text-lg' : isCompleted ? 'text-green-600' : 'text-gray-500'}`}>
+      
+      <div className="ml-4 flex-1">
+        <h3 className={`font-semibold text-sm ${
+          isActive ? 'text-blue-600' : 
+          isCompleted ? 'text-green-600' : 
+          'text-gray-500'
+        }`}>
           {title}
         </h3>
+        {details && (
+          <p className={`text-xs mt-1 ${
+            isCompleted ? 'text-green-500' : 'text-gray-400'
+          }`}>
+            {details}
+          </p>
+        )}
       </div>
-      {stepNum < 3 && (
-        <div className={`ml-8 flex-1 h-0.5 transition-all duration-500 ${
-          isCompleted ? 'bg-green-500' : 'bg-gray-200'
-        }`}></div>
+
+      {isCompleted && (
+        <div className="ml-2">
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            ✓ Verified
+          </span>
+        </div>
       )}
     </div>
   );
 
-  // Step content components
-  const LocationStep = () => (
-    <div className={`transform transition-all duration-700 ${step === RegistrationStep.LOCATION ? 'scale-100 opacity-100' : 'scale-95 opacity-60'}`}>
-      <div className="text-center p-8 bg-gradient-to-br from-blue-50 to-teal-50 rounded-2xl border border-blue-100 shadow-xl">
-        <div className="text-6xl mb-6 animate-bounce">📍</div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-3">Verify Location</h2>
-        <p className="text-gray-600 mb-6">We need to check if you're in our delivery area</p>
-        
-        {locationError && (
-          <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200 animate-shake">
-            <div className="font-medium">❌ {locationError}</div>
-          </div>
-        )}
-        
-        {location ? (
-          <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-4 animate-fadeIn">
-            <div className="flex items-center justify-center text-green-600">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+  // Current step content
+  const getCurrentStepContent = () => {
+    if (step === RegistrationStep.LOCATION) {
+      return (
+        <div className="animate-slideIn">
+          <div className="text-center p-8 bg-white rounded-2xl border shadow-lg">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span className="font-medium">Location Verified!</span>
             </div>
-          </div>
-        ) : (
-          <button
-            className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-teal-500 to-blue-600 hover:from-teal-600 hover:to-blue-700 transform hover:scale-105'} text-white py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 shadow-lg hover:shadow-xl`}
-            onClick={requestLocation}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <div className="flex items-center justify-center">
-                <div className="animate-spin mr-3 h-6 w-6 border-2 border-white border-t-transparent rounded-full"></div>
-                Checking Location...
-              </div>
-            ) : (
-              <div className="flex items-center justify-center">
-                <span className="mr-3">📍</span> Verify Location
+            
+            <h2 className="text-xl font-bold text-gray-800 mb-3">Verify Your Location</h2>
+            <p className="text-gray-600 mb-6">We need to check if you're in our delivery area</p>
+            
+            {locationError && (
+              <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div className="font-medium">❌ {locationError}</div>
               </div>
             )}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-
-  const PhoneStep = () => (
-    <div className={`transform transition-all duration-700 ${step === RegistrationStep.PHONE ? 'scale-100 opacity-100' : 'scale-95 opacity-60'}`}>
-      <div className="text-center p-8 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border border-purple-100 shadow-xl">
-        <div className="text-6xl mb-6 animate-pulse">📱</div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-3">Verify Phone</h2>
-        <p className="text-gray-600 mb-6">Secure your account with phone verification</p>
-        
-        {phoneError && (
-          <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200 animate-shake">
-            <div className="font-medium">❌ {phoneError}</div>
-          </div>
-        )}
-        
-        {phone ? (
-          <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-4 animate-fadeIn">
-            <div className="flex items-center justify-center text-green-600 mb-2">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="font-medium">Phone Verified!</span>
-            </div>
-            <div className="inline-flex items-center px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-sm font-medium">
-              📞 {phone}
-            </div>
-          </div>
-        ) : (
-          <button
-            className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 transform hover:scale-105'} text-white py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 shadow-lg hover:shadow-xl`}
-            onClick={requestPhone}
-            disabled={isProcessing || step !== RegistrationStep.PHONE}
-          >
-            {isProcessing ? (
-              <div className="flex items-center justify-center">
-                <div className="animate-spin mr-3 h-6 w-6 border-2 border-white border-t-transparent rounded-full"></div>
-                Verifying Phone...
+            
+            {location ? (
+              <div className="animate-successPulse p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center justify-center text-green-600 mb-2">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="font-medium">Location Verified!</span>
+                </div>
+                <p className="text-sm text-green-600">Moving to next step...</p>
               </div>
             ) : (
-              <div className="flex items-center justify-center">
-                <span className="mr-3">📱</span> Verify Phone
-              </div>
-            )}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-
-  const NameStep = () => (
-    <div className={`transform transition-all duration-700 ${step === RegistrationStep.NAME ? 'scale-100 opacity-100' : 'scale-95 opacity-60'}`}>
-      <div className="text-center p-8 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl border border-yellow-100 shadow-xl">
-        <div className="text-6xl mb-6 animate-bounce">👋</div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-3">What's Your Name?</h2>
-        <p className="text-gray-600 mb-6">Confirm or edit your display name</p>
-        
-        <div className="mb-6">
-          {!isEditingName ? (
-            <div className="flex items-center justify-center space-x-4">
-              <div className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-lg font-medium">
-                👤 {displayName || userName || 'No name'}
-              </div>
               <button
-                onClick={() => setIsEditingName(true)}
-                className="p-2 text-blue-600 hover:bg-blue-100 rounded-full transition-all duration-200"
+                className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 transform hover:scale-105'} text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl`}
+                onClick={requestLocation}
+                disabled={isProcessing}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+                {isProcessing ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    Checking Location...
+                  </div>
+                ) : (
+                  'Verify Location'
+                )}
               </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:border-blue-500 focus:outline-none text-center text-lg font-medium transition-all duration-200"
-                placeholder="Enter your name"
-                autoFocus
-              />
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => {
-                    setIsEditingName(false);
-                    setDisplayName(displayName || userName);
-                  }}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg font-medium transition-all duration-200"
-                >
-                  ✓ Save
-                </button>
-                <button
-                  onClick={() => {
-                    setIsEditingName(false);
-                    setDisplayName(userName);
-                  }}
-                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg font-medium transition-all duration-200"
-                >
-                  ✕ Cancel
-                </button>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-        
-        {step === RegistrationStep.NAME && !isEditingName && (
-          <button
-            onClick={submitRegistration}
-            className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-          >
-            <div className="flex items-center justify-center">
-              <span className="mr-3">🚀</span> Create Account
+      );
+    }
+
+    if (step === RegistrationStep.PHONE) {
+      return (
+        <div className="animate-slideIn">
+          <div className="text-center p-8 bg-white rounded-2xl border shadow-lg">
+            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
             </div>
-          </button>
-        )}
-      </div>
-    </div>
-  );
+            
+            <h2 className="text-xl font-bold text-gray-800 mb-3">Verify Your Phone</h2>
+            <p className="text-gray-600 mb-6">We need your phone number for order updates</p>
+            
+            {phoneError && (
+              <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div className="font-medium">❌ {phoneError}</div>
+              </div>
+            )}
+            
+            {phone ? (
+              <div className="animate-successPulse p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center justify-center text-green-600 mb-2">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="font-medium">Phone Verified!</span>
+                </div>
+                <div className="flex items-center justify-center">
+                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                    📞 {phone}
+                  </span>
+                </div>
+                <p className="text-sm text-green-600 mt-2">Moving to next step...</p>
+              </div>
+            ) : (
+              <button
+                className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 transform hover:scale-105'} text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl`}
+                onClick={requestPhone}
+                disabled={isProcessing}
+              >
+                {isProcessing ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    Verifying Phone...
+                  </div>
+                ) : (
+                  'Verify Phone Number'
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (step === RegistrationStep.NAME) {
+      return (
+        <div className="animate-slideIn">
+          <div className="text-center p-8 bg-white rounded-2xl border shadow-lg">
+            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            
+            <h2 className="text-xl font-bold text-gray-800 mb-3">Confirm Your Name</h2>
+            <p className="text-gray-600 mb-6">How would you like us to address you?</p>
+            
+            <div className="mb-6">
+              {!isEditingName ? (
+                <div className="flex items-center justify-center space-x-3">
+                  <div className="flex items-center px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <span className="text-blue-800 font-medium">
+                      {displayName || userName || 'No name provided'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setIsEditingName(true)}
+                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-center font-medium transition-all duration-200"
+                    placeholder="Enter your name"
+                    autoFocus
+                  />
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => {
+                        setIsEditingName(false);
+                        setDisplayName(displayName || userName);
+                      }}
+                      className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg font-medium transition-all duration-200"
+                    >
+                      ✓ Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditingName(false);
+                        setDisplayName(userName);
+                      }}
+                      className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg font-medium transition-all duration-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {!isEditingName && (
+              <button
+                onClick={submitRegistration}
+                className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+              >
+                Create My Account
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   // Main render
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8 px-4">
       <div className="max-w-md mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="text-4xl mb-4 animate-bounce">🛒</div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
             Welcome to Supermarket
           </h1>
-          <p className="text-gray-600 mt-2">Let's set up your account in 3 simple steps</p>
+          <p className="text-gray-600">Set up your account in 3 simple steps</p>
         </div>
 
-        {/* Steps Indicator */}
+        {/* Progress Steps */}
+        <div className="mb-8 space-y-2">
+          <StepIndicator 
+            stepNum={1} 
+            isActive={step === RegistrationStep.LOCATION} 
+            isCompleted={location !== null} 
+            title="Location Verification"
+            details={location ? "✓ Delivery area confirmed" : "Verify your delivery location"}
+          />
+          <StepIndicator 
+            stepNum={2} 
+            isActive={step === RegistrationStep.PHONE} 
+            isCompleted={phone !== ''} 
+            title="Phone Verification"
+            details={phone ? `✓ ${phone}` : "Secure your account with phone"}
+          />
+          <StepIndicator 
+            stepNum={3} 
+            isActive={step === RegistrationStep.NAME} 
+            isCompleted={step > RegistrationStep.NAME} 
+            title="Name Confirmation"
+            details={step > RegistrationStep.NAME ? `✓ ${displayName || userName}` : "Confirm your display name"}
+          />
+        </div>
+
+        {/* Current Step Content */}
         <div className="mb-8">
-          <StepIndicator stepNum={1} isActive={step === RegistrationStep.LOCATION} isCompleted={location !== null} title="Location" />
-          <StepIndicator stepNum={2} isActive={step === RegistrationStep.PHONE} isCompleted={phone !== ''} title="Phone" />
-          <StepIndicator stepNum={3} isActive={step === RegistrationStep.NAME} isCompleted={step > RegistrationStep.NAME} title="Name" />
-        </div>
-
-        {/* Step Content */}
-        <div className="space-y-6">
-          <LocationStep />
-          {location && <PhoneStep />}
-          {phone && <NameStep />}
+          {getCurrentStepContent()}
         </div>
 
         {/* Submitting State */}
         {step === RegistrationStep.SUBMITTING && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center animate-fadeIn">
-              <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-teal-600 mx-auto mb-4"></div>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">Creating Your Account</h2>
-              <p className="text-gray-600">Please wait while we set things up...</p>
+            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm mx-4">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">Creating Account</h2>
+              <p className="text-gray-600">Please wait while we set up your account...</p>
             </div>
           </div>
         )}
 
         {/* Success State */}
         {step === RegistrationStep.COMPLETE && (
-          <div className="fixed inset-0 bg-green-500 bg-opacity-90 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center animate-fadeIn">
-              <div className="text-6xl mb-4 animate-bounce">🎉</div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Welcome Aboard!</h2>
-              <p className="text-gray-600">Your account has been created successfully</p>
+          <div className="fixed inset-0 bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center z-50">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm mx-4 animate-successScale">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-3">Welcome Aboard!</h2>
+              <p className="text-gray-600 mb-4">Your account has been created successfully</p>
+              <div className="flex items-center justify-center">
+                <span className="px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                  🎉 Ready to shop!
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -727,10 +812,14 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         {/* Error State */}
         {step === RegistrationStep.ERROR && (
           <div className="fixed inset-0 bg-red-500 bg-opacity-90 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center animate-fadeIn">
-              <div className="text-6xl mb-4">❌</div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Oops! Something went wrong</h2>
-              <p className="text-gray-600 mb-4">{error}</p>
+            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm mx-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">Something went wrong</h2>
+              <p className="text-gray-600 mb-4 text-sm">{error}</p>
               <button
                 onClick={() => {
                   setStep(RegistrationStep.LOCATION);
@@ -776,23 +865,57 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
 
         {/* Custom Styles */}
         <style jsx>{`
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+          @keyframes slideIn {
+            from { 
+              opacity: 0; 
+              transform: translateY(30px); 
+            }
+            to { 
+              opacity: 1; 
+              transform: translateY(0); 
+            }
           }
           
-          @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+          @keyframes successPulse {
+            0% { 
+              transform: scale(0.95); 
+              opacity: 0.8; 
+            }
+            50% { 
+              transform: scale(1.02); 
+              opacity: 1; 
+            }
+            100% { 
+              transform: scale(1); 
+              opacity: 1; 
+            }
           }
           
-          .animate-fadeIn {
-            animation: fadeIn 0.5s ease-out;
+          @keyframes successScale {
+            0% { 
+              transform: scale(0.8) rotate(-5deg); 
+              opacity: 0; 
+            }
+            50% { 
+              transform: scale(1.05) rotate(2deg); 
+              opacity: 0.9; 
+            }
+            100% { 
+              transform: scale(1) rotate(0deg); 
+              opacity: 1; 
+            }
           }
           
-          .animate-shake {
-            animation: shake 0.5s ease-in-out;
+          .animate-slideIn {
+            animation: slideIn 0.6s ease-out;
+          }
+          
+          .animate-successPulse {
+            animation: successPulse 1s ease-out;
+          }
+          
+          .animate-successScale {
+            animation: successScale 0.8s ease-out;
           }
         `}</style>
       </div>
