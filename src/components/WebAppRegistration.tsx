@@ -32,7 +32,8 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   
   // Use refs to track state across async operations
-  const contactRequestCompletedRef = useRef(false);
+  const phoneRequestActiveRef = useRef(false);
+  const phoneResolvedRef = useRef(false);
 
   // Access Telegram WebApp
   const tgWebApp = window.Telegram?.WebApp;
@@ -85,37 +86,38 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   }, [tgWebApp]);
 
-  // Extract phone number from URL-encoded response with improved error handling
+  // Extract phone number from URL-encoded response - FIXED VERSION
   const extractPhoneNumber = (result: string): string | null => {
     try {
-      console.log('Extracting phone from:', result.substring(0, 50) + '...');
+      console.log('🔍 Extracting phone from result:', result.substring(0, 100));
       
-      if (result.includes('contact=')) {
+      if (result && result.includes('contact=')) {
         // Extract the contact parameter
         const contactParam = result.split('contact=')[1].split('&')[0];
-        console.log('Contact param (encoded):', contactParam);
+        console.log('📱 Contact param (encoded):', contactParam);
         
         // Decode the URL-encoded JSON
         const decodedContact = decodeURIComponent(contactParam);
-        console.log('Decoded contact JSON:', decodedContact);
+        console.log('📱 Decoded contact JSON:', decodedContact);
         
         // Parse the JSON to get the contact object
         const contactData = JSON.parse(decodedContact);
-        console.log('Parsed contact data:', contactData);
+        console.log('📱 Parsed contact data:', contactData);
         
         // Extract and return the phone number
         if (contactData && contactData.phone_number) {
+          console.log('✅ Successfully extracted phone number:', contactData.phone_number);
           return contactData.phone_number;
         } else {
-          console.warn('No phone_number found in contact data');
+          console.warn('❌ No phone_number found in contact data');
           return null;
         }
       } else {
-        console.log('No contact= parameter found in result');
+        console.warn('❌ No contact= parameter found in result');
         return null;
       }
     } catch (error) {
-      console.error('Failed to parse contact data:', error);
+      console.error('❌ Failed to parse contact data:', error);
       return null;
     }
   };
@@ -197,130 +199,125 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   };
 
-  // Direct approach to handle contact sharing
+  // COMPLETELY REWRITTEN phone request function based on Telegram WebApp documentation
   const requestPhone = async () => {
-    if (isProcessing) return;
+    if (isProcessing || phoneRequestActiveRef.current) return;
+    
     setIsProcessing(true);
     setPhoneError('');
-    console.log('Starting phone request process');
+    phoneRequestActiveRef.current = true;
+    phoneResolvedRef.current = false;
+    
+    console.log('🚀 Starting phone request process');
     
     if (!tgWebApp) {
       setPhoneError('Telegram WebApp is not available');
       setIsProcessing(false);
+      phoneRequestActiveRef.current = false;
       return;
     }
 
-    // Reset the contact request state
-    contactRequestCompletedRef.current = false;
-    
     try {
-      // Store event listeners for cleanup
-      let customMethodHandler: ((e: any) => void) | null = null;
-      
-      // Create a promise that will resolve when we get the phone number
       const phoneNumber = await new Promise<string>((resolve, reject) => {
-        // Flag to track if we've already resolved
-        let resolved = false;
+        let timeoutId: NodeJS.Timeout;
+        let customMethodListener: ((event: any) => void) | null = null;
         
-        // Function to handle successful phone retrieval
-        const resolveWithPhone = (phone: string) => {
-          if (!resolved) {
-            resolved = true;
-            contactRequestCompletedRef.current = true;
-            resolve(phone);
+        // Success handler
+        const handleSuccess = (phone: string) => {
+          if (phoneResolvedRef.current) return; // Already resolved
+          
+          phoneResolvedRef.current = true;
+          console.log('✅ Phone request successful:', phone);
+          
+          // Cleanup
+          if (timeoutId) clearTimeout(timeoutId);
+          if (customMethodListener) {
+            window.removeEventListener('custom_method_invoked', customMethodListener);
           }
+          
+          resolve(phone);
         };
         
-        // Handle custom method events for phone data
-        customMethodHandler = (event: any) => {
+        // Error handler
+        const handleError = (errorMsg: string) => {
+          if (phoneResolvedRef.current) return; // Already resolved
+          
+          phoneResolvedRef.current = true;
+          console.error('❌ Phone request failed:', errorMsg);
+          
+          // Cleanup
+          if (timeoutId) clearTimeout(timeoutId);
+          if (customMethodListener) {
+            window.removeEventListener('custom_method_invoked', customMethodListener);
+          }
+          
+          reject(new Error(errorMsg));
+        };
+        
+        // Set up event listener for custom method responses
+        customMethodListener = (event: any) => {
           try {
             const data = event.detail;
-            console.log('Custom method event received:', data?.req_id || 'unknown request ID');
+            console.log('📞 Received custom method event:', data);
             
-            if (data?.result && typeof data.result === 'string') {
-              const extractedPhone = extractPhoneNumber(data.result);
-              console.log('Extracted phone number:', extractedPhone);
-              
-              if (extractedPhone) {
-                resolveWithPhone(extractedPhone);
+            if (data && data.result && typeof data.result === 'string') {
+              const phone = extractPhoneNumber(data.result);
+              if (phone) {
+                handleSuccess(phone);
               }
             }
           } catch (err) {
-            console.error('Error in custom method handler:', err);
+            console.error('Error processing custom method event:', err);
           }
         };
         
-        // Add event listener for custom method invocations
-        window.addEventListener('custom_method_invoked', customMethodHandler);
+        // Add the event listener
+        window.addEventListener('custom_method_invoked', customMethodListener);
         
-        // Request contact from Telegram
+        // Start the contact request
+        console.log('📱 Requesting contact from Telegram...');
         tgWebApp.requestContact((result: any) => {
-          console.log('Contact callback received:', result ? 'with data' : 'no data');
+          console.log('📞 Contact callback received:', result);
           
-          // Direct callback handling
+          // Try to get phone from direct callback first
           if (result && result.phone_number) {
-            console.log('Phone number in callback:', result.phone_number);
-            resolveWithPhone(result.phone_number);
+            console.log('✅ Got phone from direct callback:', result.phone_number);
+            handleSuccess(result.phone_number);
+            return;
           }
           
-          // If callback didn't have the phone, try the custom method
-          // This runs regardless to ensure we cover all bases
-          try {
-            setTimeout(() => {
-              if (!resolved) {
-                console.log('Requesting contact via custom method');
-                const reqId = 'phone_' + Date.now().toString(36);
-                tgWebApp.invokeCustomMethod('getRequestedContact', {}, reqId);
-              }
-            }, 1000);
-          } catch (err) {
-            console.error('Error invoking custom method:', err);
-          }
+          // If no direct phone, the data should come through custom method events
+          console.log('ℹ️ No direct phone in callback, waiting for custom method events...');
         });
         
-        // Set timeout to reject if we don't get a phone number
-        setTimeout(() => {
-          if (!resolved) {
-            // One last attempt
-            try {
-              console.log('Final attempt to get phone number');
-              tgWebApp.invokeCustomMethod('getRequestedContact', {}, 'final_' + Date.now().toString(36));
-              
-              // Give it a moment to process
-              setTimeout(() => {
-                if (!resolved) {
-                  reject(new Error('Contact request timed out'));
-                }
-              }, 3000);
-            } catch (err) {
-              reject(new Error('Failed to get phone number'));
-            }
+        // Set timeout - increased to 20 seconds
+        timeoutId = setTimeout(() => {
+          if (!phoneResolvedRef.current) {
+            console.warn('⏰ Phone request timed out after 20 seconds');
+            handleError('Contact request timed out');
           }
-        }, 15000); // Increased timeout
+        }, 20000);
       });
       
-      // Clean up event listener
-      if (customMethodHandler) {
-        window.removeEventListener('custom_method_invoked', customMethodHandler);
-      }
-      
-      // If we got here, we successfully got a phone number
-      console.log('Successfully retrieved phone number:', phoneNumber);
+      // Success! We got the phone number
+      console.log('🎉 Successfully retrieved phone number:', phoneNumber);
       setPhone(phoneNumber);
       
       // Proceed with registration
-      submitRegistration(phoneNumber, location);
+      await submitRegistration(phoneNumber, location);
       
     } catch (error: any) {
-      console.error('Phone error:', error);
-      let errorMessage = 'Failed to get phone number. Please try again.';
+      console.error('💥 Phone request error:', error);
       
+      let errorMessage = 'Failed to get phone number. Please try again.';
       if (error instanceof Error) {
         errorMessage = error.message;
       }
       
       setPhoneError(errorMessage);
       setIsProcessing(false);
+    } finally {
+      phoneRequestActiveRef.current = false;
     }
   };
 
@@ -385,12 +382,13 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
               We need your location to check if you're within our delivery area.
             </p>
             {locationError && (
-              <div className="text-red-600 mb-4">
-                {locationError}
+              <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div className="font-medium">Location Error:</div>
+                <div className="text-sm">{locationError}</div>
               </div>
             )}
             <button 
-              className={`w-full ${isProcessing ? 'bg-gray-400' : 'bg-teal-600 hover:bg-teal-700'} text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center`}
+              className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'} text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center transition-colors`}
               onClick={requestLocation}
               disabled={isProcessing}
             >
@@ -420,12 +418,13 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             </p>
             
             {phoneError && (
-              <div className="text-red-600 mb-4">
-                {phoneError}
+              <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div className="font-medium">Phone Error:</div>
+                <div className="text-sm">{phoneError}</div>
               </div>
             )}
             <button 
-              className={`w-full ${isProcessing ? 'bg-gray-400' : 'bg-teal-600 hover:bg-teal-700'} text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center`}
+              className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'} text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center transition-colors`}
               onClick={requestPhone}
               disabled={isProcessing}
             >
@@ -449,8 +448,11 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             <div className="flex justify-center mb-4">
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-600"></div>
             </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              Creating Account
+            </h2>
             <p className="text-gray-700">
-              Creating your account...
+              Please wait while we set up your account...
             </p>
           </div>
         );
@@ -463,7 +465,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
               Registration Complete!
             </h2>
             <p className="text-gray-600">
-              Your account has been created successfully.
+              Your account has been created successfully. You can now start shopping!
             </p>
           </div>
         );
@@ -475,12 +477,20 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
               Registration Failed
             </h2>
-            <p className="text-gray-600 mb-6">
-              {error || 'An unexpected error occurred'}
-            </p>
+            <div className="text-red-600 mb-6 p-3 bg-red-50 rounded-lg border border-red-200">
+              <div className="font-medium">Error Details:</div>
+              <div className="text-sm">{error || 'An unexpected error occurred'}</div>
+            </div>
             <button 
-              className="bg-teal-600 hover:bg-teal-700 text-white py-2 px-6 rounded-lg font-medium"
-              onClick={() => setStep(RegistrationStep.LOCATION)}
+              className="bg-teal-600 hover:bg-teal-700 text-white py-2 px-6 rounded-lg font-medium transition-colors"
+              onClick={() => {
+                setStep(RegistrationStep.LOCATION);
+                setError('');
+                setLocationError('');
+                setPhoneError('');
+                phoneRequestActiveRef.current = false;
+                phoneResolvedRef.current = false;
+              }}
             >
               Try Again
             </button>
@@ -498,21 +508,29 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       </div>
       {renderStepContent()}
       
-      {/* Debug Console */}
+      {/* Debug Console - Enhanced for better visibility */}
       {debugLogs.length > 0 && (
         <div className="mt-4 p-2 bg-gray-100 border rounded text-xs text-left overflow-auto mx-4 mb-4" style={{ maxHeight: '200px' }}>
-          <div className="font-bold mb-1 flex justify-between items-center">
-            <span>Debug Console:</span>
+          <div className="font-bold mb-1 flex justify-between items-center sticky top-0 bg-gray-100">
+            <span>Debug Console ({debugLogs.length} logs):</span>
             <button 
               onClick={() => setDebugLogs([])} 
-              className="px-2 py-1 bg-gray-200 rounded text-xs"
+              className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs transition-colors"
             >
               Clear
             </button>
           </div>
           <div className="overflow-y-auto" style={{ maxHeight: '180px' }}>
             {debugLogs.map((log, i) => (
-              <div key={i} className={log.startsWith('ERROR') ? 'text-red-600' : log.startsWith('WARN') ? 'text-orange-600' : ''}>
+              <div 
+                key={i} 
+                className={`py-1 ${
+                  log.startsWith('ERROR') ? 'text-red-600 font-medium' : 
+                  log.startsWith('WARN') ? 'text-orange-600' : 
+                  log.includes('✅') ? 'text-green-600 font-medium' :
+                  log.includes('📱') || log.includes('📞') ? 'text-blue-600' : ''
+                }`}
+              >
                 {log}
               </div>
             ))}
