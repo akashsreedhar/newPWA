@@ -715,12 +715,12 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
             <img 
               src={logo} 
-              alt="Magpie Logo" 
-              className="w-16 h-16 object-contain"
+              alt="Magpie Web" 
+              className="w-20 h-20 object-cover"
             />
           </div>
           <h1 className="text-xl font-bold text-gray-800 mb-2">
-            Welcome to Supermarket
+            Welcome to Safari Cheemeni
           </h1>
           <p className="text-gray-600 text-sm">Set up your account in 3 simple steps</p>
         </div>
