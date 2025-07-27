@@ -228,22 +228,29 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         };
 
         // Listen for receiveEvent (phone_requested or custom_method_invoked)
-        const globalEventHandler = (event: any) => {
-          try {
-            const data = event?.detail ?? event?.data;
-            if (data?.type === 'phone_requested' && data?.status === 'cancelled') {
-              console.warn('🚫 User cancelled phone sharing.');
-              handleError('You cancelled phone number sharing. Please allow access.');
-            }
-            if (data?.type === 'custom_method_invoked' && typeof data.result === 'string' && data.result.includes('contact=')) {
-              console.log('🎯 Found contact data in receiveEvent (type custom_method_invoked)');
-              const phone = extractPhoneNumber(data.result);
-              if (phone) handleSuccess(phone);
-            }
-          } catch (err) {
-            console.error('Error processing global custom method event:', err);
-          }
-        };
+       const globalEventHandler = (event: any) => {
+  try {
+    console.log('[WebApp] receiveEvent caught:', event);
+    const data = event?.data;
+
+    if (data?.type === 'phone_requested' && data?.status === 'cancelled') {
+      console.warn('🚫 User cancelled phone sharing.');
+      handleError('You cancelled phone number sharing. Please allow access.');
+    }
+    if (
+      data?.type === 'custom_method_invoked' &&
+      typeof data.result === 'string' &&
+      data.result.includes('contact=')
+    ) {
+      console.log('🎯 Found contact data in receiveEvent (type custom_method_invoked)');
+      const phone = extractPhoneNumber(data.result);
+      if (phone) handleSuccess(phone);
+    }
+  } catch (err) {
+    console.error('Error processing global custom method event:', err);
+  }
+};
+
 
         window.addEventListener('receiveEvent', globalEventHandler);
 
