@@ -28,7 +28,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   const [error, setError] = useState<string>('');
   const [locationError, setLocationError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
-  const [manualPhone, setManualPhone] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   // Access Telegram WebApp
@@ -82,144 +82,48 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
   }, [tgWebApp]);
 
-  // Request location from Telegram with improved error handling
+  // Parse URL-encoded contact data from Telegram
+  const parseContactData = (resultStr: string): { phone_number?: string } => {
+    try {
+      if (resultStr.includes('contact=')) {
+        // Extract the contact data parameter
+        const contactParam = resultStr.split('contact=')[1].split('&')[0];
+        // URL decode the contact data
+        const decodedContact = decodeURIComponent(contactParam);
+        // Parse the JSON object
+        return JSON.parse(decodedContact);
+      }
+      return {};
+    } catch (err) {
+      console.error('Failed to parse contact data:', err);
+      return {};
+    }
+  };
+
+  // Request location using only browser geolocation
   const requestLocation = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     setLocationError('');
     console.log('Starting location request process');
     
     if (!tgWebApp) {
       setLocationError('Telegram WebApp is not available');
+      setIsProcessing(false);
       return;
     }
 
     try {
-      // First, just show a popup explaining why we need location
-      console.log('Showing location permission popup');
-      const buttonPressed = await new Promise<string>((resolve) => {
-        tgWebApp.showPopup({
-          title: 'Location Required',
-          message: 'Please share your location to continue. We need this to verify if you are within our delivery area.',
-          buttons: [
-            {text: 'Share Location', type: 'default', id: 'share'},
-            {text: 'Cancel', type: 'cancel', id: 'cancel'}
-          ]
-        }, (buttonId: string) => {
-          console.log('Popup button clicked:', buttonId);
-          resolve(buttonId);
-        });
-      });
+      console.log('Using browser geolocation directly');
       
-      // If user clicked Cancel, throw error
-      if (buttonPressed !== 'share') {
-        throw new Error('Location sharing cancelled');
-      }
-      
-      console.log('User agreed to share location, requesting location...');
-      
-      // Now request location with a timeout
-      const locationData = await Promise.race([
-        new Promise<any>((resolve, reject) => {
-          const handleLocationResult = (result: any) => {
-            console.log('Location result received:', result ? 'data received' : 'no data');
-            if (result && typeof result === 'object' && 'latitude' in result && 'longitude' in result) {
-              resolve({
-                latitude: result.latitude,
-                longitude: result.longitude,
-                address: result.address || undefined
-              });
-            } else {
-              reject(new Error('Invalid location data received'));
-            }
-          };
-          
-          // Request location with the callback
-          try {
-            tgWebApp.requestLocation(handleLocationResult);
-          } catch (err) {
-            console.error('Error calling requestLocation:', err);
-            reject(new Error(`Failed to request location: ${err}`));
-          }
-        }),
-        // Add a timeout to prevent UI from hanging forever
-        new Promise<never>((_, reject) => 
-          setTimeout(() => {
-            console.warn('Location request timed out');
-            reject(new Error('Location request timed out after 15 seconds'));
-          }, 15000)
-        )
-      ]);
-      
-      console.log('Location data received successfully');
-      
-      try {
-        // Verify location is in delivery area
-        console.log('Verifying location with backend...');
-        const verifyResponse = await fetch(`${BOT_SERVER_URL}/verify-location`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(locationData)
-        });
-        
-        const verifyResult = await verifyResponse.json();
-        console.log('Verify result:', verifyResult);
-        
-        if (!verifyResult.allowed) {
-          setLocationError(verifyResult.message || 'Location is outside our delivery area');
-          return;
-        }
-        
-        // If verifyResult includes address info, add it to location data
-        if (verifyResult.address && !locationData.address) {
-          locationData.address = verifyResult.address;
-        }
-        
-        // Location is valid, proceed to next step
-        setLocation(locationData);
-        setStep(RegistrationStep.PHONE);
-      } catch (verifyError: any) {
-        console.error('Location verification error:', verifyError);
-        throw new Error(`Verification failed: ${verifyError.message}`);
-      }
-      
-    } catch (error: any) {
-      console.error('Location error:', error);
-      
-      // Try browser geolocation as fallback
-      try {
-        console.log('Trying browser geolocation as fallback...');
-        setLocationError('Trying browser geolocation as fallback...');
-        
+      // Using browser geolocation - more reliable than Telegram's method
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            async (position) => {
-              const locationData = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude
-              };
-              
-              console.log('Browser geolocation succeeded:', locationData);
-              
-              // Verify location is in delivery area
-              const verifyResponse = await fetch(`${BOT_SERVER_URL}/verify-location`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(locationData)
-              });
-              
-              const verifyResult = await verifyResponse.json();
-              
-              if (!verifyResult.allowed) {
-                setLocationError(verifyResult.message || 'Location is outside our delivery area');
-                return;
-              }
-              
-              // Location is valid, proceed to next step
-              setLocation(locationData);
-              setStep(RegistrationStep.PHONE);
-            },
-            (geoError) => {
-              console.error('Browser geolocation error:', geoError);
-              setLocationError(`Location access denied. Please enable location access and try again. (${geoError.message})`);
+            resolve,
+            (error) => {
+              console.error('Browser geolocation error:', error);
+              reject(new Error(`Location access denied: ${error.message}`));
             },
             { 
               enableHighAccuracy: true, 
@@ -228,111 +132,158 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             }
           );
         } else {
-          setLocationError('Geolocation is not supported by your browser');
+          reject(new Error('Geolocation is not supported by your browser'));
         }
-      } catch (fallbackError: any) {
-        console.error('Fallback geolocation error:', fallbackError);
-        setLocationError(error.message || 'Failed to get location');
-      }
-    }
-  };
-
-  // Request phone number from Telegram
-  const requestPhone = async () => {
-    setPhoneError('');
-    console.log('Starting phone request process');
-    
-    if (manualPhone) {
-      // Validate manual phone input
-      if (!phone || phone.length < 10) {
-        setPhoneError('Please enter a valid phone number');
+      });
+      
+      const locationData = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+      
+      console.log('Location data received:', locationData);
+      
+      // Verify location is in delivery area
+      console.log('Verifying location with backend...');
+      const verifyResponse = await fetch(`${BOT_SERVER_URL}/verify-location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locationData)
+      });
+      
+      const verifyResult = await verifyResponse.json();
+      console.log('Verify result:', verifyResult);
+      
+      if (!verifyResult.allowed) {
+        setLocationError(verifyResult.message || 'Location is outside our delivery area');
+        setIsProcessing(false);
         return;
       }
       
-      // Submit registration with manual phone
-      submitRegistration();
-      return;
+      // If verifyResult includes address info, add it to location data
+      if (verifyResult.address) {
+        locationData.address = verifyResult.address;
+      }
+      
+      // Location is valid, proceed to next step
+      setLocation(locationData);
+      setStep(RegistrationStep.PHONE);
+      setIsProcessing(false);
+      
+    } catch (error: any) {
+      console.error('Location error:', error);
+      setLocationError(error.message || 'Failed to get location. Please try again.');
+      setIsProcessing(false);
     }
+  };
+
+  // Request phone number directly from Telegram
+  const requestPhone = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setPhoneError('');
+    console.log('Starting phone request process');
     
     if (!tgWebApp) {
       setPhoneError('Telegram WebApp is not available');
+      setIsProcessing(false);
       return;
     }
     
     try {
-      // Request phone via Telegram
-      console.log('Showing phone permission popup');
-      const buttonPressed = await new Promise<string>((resolve) => {
-        tgWebApp.showPopup({
-          title: 'Phone Number Required',
-          message: 'Please share your phone number for delivery coordination.',
-          buttons: [
-            {text: 'Share Phone Number', type: 'default', id: 'share'},
-            {text: 'Enter Manually', type: 'default', id: 'manual'},
-            {text: 'Cancel', type: 'cancel', id: 'cancel'}
-          ]
-        }, (buttonId: string) => {
-          console.log('Phone popup button clicked:', buttonId);
-          resolve(buttonId);
+      // Setup event listener for the custom method response
+      const contactData = await new Promise<{ phone_number?: string }>((resolve, reject) => {
+        let requestCompleted = false;
+        let timeoutId: ReturnType<typeof setTimeout>;
+        
+        // Create event listener for custom method response
+        const handleCustomMethod = (event: any) => {
+          const data = event.detail;
+          console.log('Received custom method event:', data);
+          
+          // Make sure this is a getRequestedContact response
+          if (data && data.result && data.result.includes('contact=')) {
+            window.removeEventListener('custom_method_invoked', handleCustomMethod);
+            clearTimeout(timeoutId);
+            requestCompleted = true;
+            
+            const contact = parseContactData(data.result);
+            console.log('Parsed contact data:', contact);
+            resolve(contact);
+          }
+        };
+        
+        // Add event listener
+        window.addEventListener('custom_method_invoked', handleCustomMethod);
+        
+        // Request contact directly (simplified approach)
+        tgWebApp.requestContact((result) => {
+          console.log('Contact callback result:', result ? 'has data' : 'no data');
+          
+          // The actual data will come through the custom_method_invoked event
+          // So we don't need to do anything here
+          if (result && result.phone_number) {
+            requestCompleted = true;
+            window.removeEventListener('custom_method_invoked', handleCustomMethod);
+            clearTimeout(timeoutId);
+            resolve(result);
+          }
         });
+        
+        // Set timeout for failure
+        timeoutId = setTimeout(() => {
+          if (!requestCompleted) {
+            window.removeEventListener('custom_method_invoked', handleCustomMethod);
+            console.warn('Contact request timed out, trying to get contact with custom method');
+            
+            // Try to get the contact data via custom method as last resort
+            const reqId = 'contact_' + Math.random().toString(36).substring(2, 15);
+            
+            const customMethodTimeout = setTimeout(() => {
+              reject(new Error('Contact request timed out completely'));
+            }, 5000);
+            
+            const customMethodHandler = (event: any) => {
+              const data = event.detail;
+              if (data && data.req_id === reqId) {
+                window.removeEventListener('custom_method_invoked', customMethodHandler);
+                clearTimeout(customMethodTimeout);
+                
+                if (data.result && data.result.includes('contact=')) {
+                  const contact = parseContactData(data.result);
+                  console.log('Custom method contact data:', contact);
+                  resolve(contact);
+                } else {
+                  reject(new Error('Invalid contact data format'));
+                }
+              }
+            };
+            
+            window.addEventListener('custom_method_invoked', customMethodHandler);
+            tgWebApp.invokeCustomMethod('getRequestedContact', {}, reqId);
+          }
+        }, 8000);
       });
       
-      if (buttonPressed === 'manual') {
-        setManualPhone(true);
-        return;
+      if (!contactData || !contactData.phone_number) {
+        throw new Error('No phone number received');
       }
       
-      if (buttonPressed !== 'share') {
-        throw new Error('Phone sharing cancelled');
-      }
-      
-      // Now request phone with a timeout
-      console.log('User agreed to share phone, requesting contact...');
-      const phoneData = await Promise.race([
-        new Promise<string>((resolve, reject) => {
-          const handleContactResult = (result: any) => {
-            console.log('Contact result received:', result ? 'data received' : 'no data');
-            if (result && result.phone_number) {
-              resolve(result.phone_number);
-            } else {
-              reject(new Error('Invalid contact data received'));
-            }
-          };
-          
-          // Request contact with the callback
-          try {
-            tgWebApp.requestContact(handleContactResult);
-          } catch (err) {
-            console.error('Error calling requestContact:', err);
-            reject(new Error(`Failed to request contact: ${err}`));
-          }
-        }),
-        // Add a timeout to prevent UI from hanging forever
-        new Promise<never>((_, reject) => 
-          setTimeout(() => {
-            console.warn('Contact request timed out');
-            reject(new Error('Contact request timed out after 15 seconds'));
-          }, 15000)
-        )
-      ]);
-      
-      console.log('Phone number received:', phoneData ? 'valid number' : 'no number');
+      console.log('Phone number received:', contactData.phone_number);
       
       // Phone is provided, proceed with registration
-      setPhone(phoneData);
-      submitRegistration();
+      setPhone(contactData.phone_number);
+      submitRegistration(contactData.phone_number, location);
       
     } catch (error: any) {
       console.error('Phone error:', error);
-      // Don't show error for manual option choice
-      if (error.message !== 'Phone sharing cancelled' || !manualPhone) {
-        setPhoneError(error.message || 'Failed to get phone number');
-      }
+      setPhoneError(error.message || 'Failed to get phone number. Please try again.');
+      setIsProcessing(false);
     }
   };
 
   // Submit registration data to backend
-  const submitRegistration = async () => {
+  const submitRegistration = async (phoneNumber?: string, locationData?: any) => {
     setStep(RegistrationStep.SUBMITTING);
     setError('');
     console.log('Submitting registration data');
@@ -341,8 +292,8 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       const registrationData = {
         initData,
         fingerprint,
-        phone,
-        location,
+        phone: phoneNumber || phone,
+        location: locationData || location,
       };
       
       console.log('Registration payload:', {
@@ -368,11 +319,13 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         console.error('Registration failed:', result.error);
         setError(result.error || 'Registration failed');
         setStep(RegistrationStep.ERROR);
+        setIsProcessing(false);
       }
     } catch (error: any) {
       console.error('Registration error:', error);
       setError('Network error during registration');
       setStep(RegistrationStep.ERROR);
+      setIsProcessing(false);
     }
   };
 
@@ -392,19 +345,23 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             {locationError && (
               <div className="text-red-600 mb-4">
                 {locationError}
-                <button 
-                  className="mt-2 w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg font-medium"
-                  onClick={requestLocation}
-                >
-                  Try Again
-                </button>
               </div>
             )}
             <button 
-              className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
+              className={`w-full ${isProcessing ? 'bg-gray-400' : 'bg-teal-600 hover:bg-teal-700'} text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center`}
               onClick={requestLocation}
+              disabled={isProcessing}
             >
-              <span className="mr-2">📍</span> Share Location
+              {isProcessing ? (
+                <>
+                  <div className="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <span className="mr-2">📍</span> Share Location
+                </>
+              )}
             </button>
           </div>
         );
@@ -420,48 +377,27 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
               We need your phone number for delivery coordination.
             </p>
             
-            {manualPhone ? (
-              <>
-                <div className="mb-4">
-                  <input
-                    type="tel"
-                    className={`w-full border ${phoneError ? 'border-red-500' : 'border-gray-300'} rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500`}
-                    placeholder="Enter your phone number"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                  {phoneError && (
-                    <p className="text-red-600 text-sm mt-1 text-left">{phoneError}</p>
-                  )}
-                </div>
-                <button 
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
-                  onClick={requestPhone}
-                >
-                  <span className="mr-2">📱</span> Submit
-                </button>
-              </>
-            ) : (
-              <>
-                {phoneError && (
-                  <div className="text-red-600 mb-4">
-                    {phoneError}
-                    <button 
-                      className="mt-2 w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg font-medium"
-                      onClick={() => setManualPhone(true)}
-                    >
-                      Enter Manually Instead
-                    </button>
-                  </div>
-                )}
-                <button 
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center"
-                  onClick={requestPhone}
-                >
-                  <span className="mr-2">📱</span> Share Phone Number
-                </button>
-              </>
+            {phoneError && (
+              <div className="text-red-600 mb-4">
+                {phoneError}
+              </div>
             )}
+            <button 
+              className={`w-full ${isProcessing ? 'bg-gray-400' : 'bg-teal-600 hover:bg-teal-700'} text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center`}
+              onClick={requestPhone}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <div className="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <span className="mr-2">📱</span> Share Phone Number
+                </>
+              )}
+            </button>
           </div>
         );
         
