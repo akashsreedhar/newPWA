@@ -14,6 +14,8 @@ interface AuthReturn {
   accessError: string;
   lastLocation: LastLocation | null;
   loading: boolean;
+  registrationMode: boolean;
+  registrationInitData: string | null;
 }
 
 // Extend Window interface for Telegram WebApp
@@ -44,6 +46,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
   const [accessError, setAccessError] = useState<string>("");
   const [lastLocation, setLastLocation] = useState<LastLocation | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [registrationMode, setRegistrationMode] = useState<boolean>(false);
+  const [registrationInitData, setRegistrationInitData] = useState<string | null>(null);
 
   // Debounce/lock: Only allow one authentication at a time
   const isAuthenticating = useRef(false);
@@ -88,6 +92,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
         });
         setAccessError("");
         setLoading(false);
+        setRegistrationMode(false);
+        setRegistrationInitData(null);
         isAuthenticating.current = false;
         
         // 🔥 NEW: Sign in mock user to Firebase Auth in dev mode
@@ -132,6 +138,17 @@ export function useAuth(fingerprint: string | null): AuthReturn {
             const data = await resp.json();
             if (cancelled) return;
             if (data.valid) {
+              // Check if registration is required
+              if (data.requiresRegistration) {
+                setRegistrationMode(true);
+                setRegistrationInitData(tgWebApp.initData);
+                setUserId(null);
+                setAccessError("");
+                setLoading(false);
+                isAuthenticating.current = false;
+                return;
+              }
+              
               setUserId(data.user_id || data.user);
               if (data.lastLocation) {
                 setLastLocation({
@@ -141,6 +158,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
                 });
               }
               setAccessError("");
+              setRegistrationMode(false);
+              setRegistrationInitData(null);
               
               // 🔥 NEW: Sign in to Firebase Auth with custom token
               if (data.firebaseCustomToken) {
@@ -157,12 +176,14 @@ export function useAuth(fingerprint: string | null): AuthReturn {
               setLoading(false);
               return;
             } else {
-              // FIX: Block unregistered users and show error
+              // Handle other validation errors
               setUserId(null);
+              setRegistrationMode(false);
+              setRegistrationInitData(null);
               setAccessError(
                 data.error && data.error.includes("not registered")
-                  ? "❌ You are not registered. Please register via the Telegram bot."
-                  : "❌ Invalid or expired session. Please use the Telegram bot to get a new access link."
+                  ? "❌ You are not registered. Please complete the registration process."
+                  : "❌ Invalid or expired session. Please try again."
               );
               setLoading(false);
               return;
@@ -176,6 +197,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
         let token = params.get("token");
         if (!token) {
           setUserId(null);
+          setRegistrationMode(false);
+          setRegistrationInitData(null);
           setAccessError("❌ Invalid session. Please use the Telegram bot to get a valid access token.");
           setLoading(false);
           return;
@@ -210,6 +233,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
             } else {
               clearRefreshToken();
               setUserId(null);
+              setRegistrationMode(false);
+              setRegistrationInitData(null);
               setAccessError("❌ Session expired. Please use the Telegram bot to get a new access link.");
               setLoading(false);
               return;
@@ -217,6 +242,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
           } else {
             clearRefreshToken();
             setUserId(null);
+            setRegistrationMode(false);
+            setRegistrationInitData(null);
             setAccessError("❌ Session expired. Please use the Telegram bot to get a new access link.");
             setLoading(false);
             return;
@@ -234,6 +261,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
             return authenticateUser(true);
           }
           setUserId(null);
+          setRegistrationMode(false);
+          setRegistrationInitData(null);
           throw new Error(`Server responded with ${response.status}`);
         }
 
@@ -251,6 +280,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
             });
           }
           setAccessError("");
+          setRegistrationMode(false);
+          setRegistrationInitData(null);
           // Store refresh token if provided
           if (data.refreshToken) setRefreshToken(data.refreshToken);
           
@@ -268,11 +299,15 @@ export function useAuth(fingerprint: string | null): AuthReturn {
           
         } else {
           setUserId(null);
+          setRegistrationMode(false);
+          setRegistrationInitData(null);
           setAccessError("❌ Invalid or expired session. Please use the Telegram bot to get a new access link.");
         }
       } catch (error) {
         if (!cancelled) {
           setUserId(null);
+          setRegistrationMode(false);
+          setRegistrationInitData(null);
           setAccessError("❌ Connection failed. Please check your internet connection and try again.");
         }
       } finally {
@@ -292,6 +327,8 @@ export function useAuth(fingerprint: string | null): AuthReturn {
     userId,
     accessError,
     lastLocation,
-    loading
+    loading,
+    registrationMode,
+    registrationInitData
   };
 }

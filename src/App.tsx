@@ -6,6 +6,7 @@ import BottomNavigation from './components/BottomNavigation';
 import GlobalHeader from './components/GlobalHeader';
 import PersistentCartButton from './components/PersistentCartButton';
 import CartAnimation from './components/CartAnimation';
+import WebAppRegistration from './components/WebAppRegistration';
 import HomePage from './pages/HomePage';
 import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
@@ -255,7 +256,28 @@ const AppInner: React.FC = () => {
   };
 
   // --- Auth ---
-  const { userId, accessError, loading: authLoading } = useAuth(fingerprint);
+  const { userId, accessError, loading: authLoading, registrationMode, registrationInitData } = useAuth(fingerprint);
+
+  // Registration completion handler
+  const handleRegistrationComplete = (userData: any) => {
+    // Set user ID from registration
+    if (userData.user_id) {
+      // Store tokens
+      if (userData.token) {
+        localStorage.setItem('token', userData.token);
+      }
+      if (userData.refreshToken) {
+        // FIX: Use 'refreshToken' key consistently instead of 'refresh_token'
+        localStorage.setItem('refreshToken', userData.refreshToken);
+      }
+      if (userData.firebaseCustomToken) {
+        localStorage.setItem('firebase_token', userData.firebaseCustomToken);
+      }
+      
+      // Refresh the page to apply new auth state
+      window.location.reload();
+    }
+  };
 
   // Fetch user name when userId changes
   useEffect(() => {
@@ -530,6 +552,18 @@ const AppInner: React.FC = () => {
       </div>
     );
   }
+  
+  // Show registration UI if needed
+  if (registrationMode && registrationInitData) {
+    return (
+      <WebAppRegistration 
+        initData={registrationInitData}
+        fingerprint={fingerprint || ''}
+        onRegistrationComplete={handleRegistrationComplete}
+      />
+    );
+  }
+  
   if (authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-center relative overflow-hidden">
@@ -666,6 +700,8 @@ const AppInner: React.FC = () => {
       </div>
     );
   }
+  
+  // Replace old access error screen with proper instructions
   if (accessError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
@@ -673,26 +709,19 @@ const AppInner: React.FC = () => {
           <div className="text-2xl mb-2">🔒 Access Error</div>
           <div className="mb-2">{accessError}</div>
           <div className="text-gray-800 text-sm">
-            To use this app, please register via the Telegram bot first.<br />
-            <b>Step 1:</b> Go to the SuperMarket Telegram bot.<br />
-            <b>Step 2:</b> Complete registration by sharing your name, phone, and location.<br />
-            <b>Step 3:</b> Then return here and try again!
+            Please complete the registration process to continue.
           </div>
         </div>
       </div>
     );
   }
+  
   if (!userId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-center p-6">
         <div className="bg-red-100 border border-red-300 rounded-lg p-6 text-red-700 max-w-md">
           <div className="text-2xl mb-2">🚫 Access Denied</div>
-          <div className="mb-2">You are not registered. Please register via the SuperMarket Telegram bot before using this app.</div>
-          <div className="text-gray-800 text-sm">
-            <b>Step 1:</b> Go to the SuperMarket Telegram bot.<br />
-            <b>Step 2:</b> Complete registration by sharing your name, phone, and location.<br />
-            <b>Step 3:</b> Then return here and try again!
-          </div>
+          <div className="mb-2">You are not registered. Please complete the registration process to use this app.</div>
         </div>
       </div>
     );
@@ -734,10 +763,7 @@ const AppInner: React.FC = () => {
             <div className="flex items-center bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow">
               <div className="font-semibold mb-1">Registration Required</div>
               <div className="text-sm ml-2">
-                Please register via the SuperMarket Telegram bot before placing an order.<br />
-                <b>Step 1:</b> Go to the SuperMarket Telegram bot.<br />
-                <b>Step 2:</b> Complete registration by sharing your name, phone, and location.<br />
-                <b>Step 3:</b> Then return here and try again!
+                Please complete the registration process before placing an order.
               </div>
             </div>
           </div>
