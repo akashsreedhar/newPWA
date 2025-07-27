@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BOT_SERVER_URL } from '../config';
+import logo from '../images/Magpieweblogo.png';
 
 // Define props interface
 interface WebAppRegistrationProps {
@@ -33,7 +34,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   const [locationError, setLocationError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   // Use refs to track state across async operations
   const phoneRequestActiveRef = useRef(false);
@@ -41,43 +41,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
 
   // Access Telegram WebApp
   const tgWebApp = window.Telegram?.WebApp;
-
-  // Setup debug console
-  useEffect(() => {
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-
-    console.log = (...args) => {
-      const message = args.map(arg =>
-        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-      ).join(' ');
-      setDebugLogs(prev => [...prev, `LOG: ${message}`]);
-      originalConsoleLog.apply(console, args);
-    };
-
-    console.error = (...args) => {
-      const message = args.map(arg =>
-        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-      ).join(' ');
-      setDebugLogs(prev => [...prev, `ERROR: ${message}`]);
-      originalConsoleError.apply(console, args);
-    };
-
-    console.warn = (...args) => {
-      const message = args.map(arg =>
-        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-      ).join(' ');
-      setDebugLogs(prev => [...prev, `WARN: ${message}`]);
-      originalConsoleWarn.apply(console, args);
-    };
-
-    return () => {
-      console.log = originalConsoleLog;
-      console.error = originalConsoleError;
-      console.warn = originalConsoleWarn;
-    };
-  }, []);
 
   useEffect(() => {
     // Telegram MainButton setup and extract user data
@@ -155,7 +118,22 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             resolve,
             (error) => {
               console.error('Browser geolocation error:', error);
-              reject(new Error(`Location access denied: ${error.message}`));
+              let errorMessage = 'Location access denied. ';
+              switch (error.code) {
+                case error.PERMISSION_DENIED:
+                  errorMessage += 'Please enable location access in your browser settings and try again.';
+                  break;
+                case error.POSITION_UNAVAILABLE:
+                  errorMessage += 'Location information is unavailable. Please check your device settings.';
+                  break;
+                case error.TIMEOUT:
+                  errorMessage += 'Location request timed out. Please try again.';
+                  break;
+                default:
+                  errorMessage += 'Please enable location services and try again.';
+                  break;
+              }
+              reject(new Error(errorMessage));
             },
             {
               enableHighAccuracy: true,
@@ -164,7 +142,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             }
           );
         } else {
-          reject(new Error('Geolocation is not supported by your browser'));
+          reject(new Error('Geolocation is not supported by your browser. Please update your browser or use a different device.'));
         }
       });
 
@@ -231,7 +209,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     try {
       const phoneNumber = await new Promise<string>((resolve, reject) => {
         let timeoutId: NodeJS.Timeout;
-        let consoleLogInterceptor: any = null;
 
         const handleSuccess = (phone: string) => {
           if (phoneResolvedRef.current) return;
@@ -255,7 +232,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         const setupConsoleInterception = () => {
           const originalConsoleLog = console.log;
           
-          consoleLogInterceptor = (...args: any[]) => {
+          const consoleLogInterceptor = (...args: any[]) => {
             // Call original console.log first
             originalConsoleLog.apply(console, args);
             
@@ -493,28 +470,28 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     title: string,
     details?: string 
   }) => (
-    <div className={`flex items-center p-4 mb-4 rounded-xl border transition-all duration-500 ${
+    <div className={`flex items-center p-3 mb-3 rounded-xl border transition-all duration-500 ${
       isCompleted ? 'bg-green-50 border-green-200' :
       isActive ? 'bg-blue-50 border-blue-200 shadow-md' :
       'bg-gray-50 border-gray-200'
     }`}>
-      <div className={`relative flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all duration-500 ${
+      <div className={`relative flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all duration-500 ${
         isCompleted ? 'bg-green-500 border-green-500' :
         isActive ? 'bg-blue-500 border-blue-500' :
         'bg-gray-300 border-gray-300'
       }`}>
         {isCompleted ? (
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         ) : (
-          <span className={`text-sm font-bold ${isActive || isCompleted ? 'text-white' : 'text-gray-500'}`}>
+          <span className={`text-xs font-bold ${isActive || isCompleted ? 'text-white' : 'text-gray-500'}`}>
             {stepNum}
           </span>
         )}
       </div>
       
-      <div className="ml-4 flex-1">
+      <div className="ml-3 flex-1">
         <h3 className={`font-semibold text-sm ${
           isActive ? 'text-blue-600' : 
           isCompleted ? 'text-green-600' : 
@@ -546,42 +523,42 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     if (step === RegistrationStep.LOCATION) {
       return (
         <div className="animate-slideIn">
-          <div className="text-center p-8 bg-white rounded-2xl border shadow-lg">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="text-center p-6 bg-white rounded-2xl border shadow-lg">
+            <div className="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
             
-            <h2 className="text-xl font-bold text-gray-800 mb-3">Verify Your Location</h2>
-            <p className="text-gray-600 mb-6">We need to check if you're in our delivery area</p>
+            <h2 className="text-lg font-bold text-gray-800 mb-2">Verify Your Location</h2>
+            <p className="text-gray-600 mb-4 text-sm">We need to check if you're in our delivery area</p>
             
             {locationError && (
               <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
-                <div className="font-medium">❌ {locationError}</div>
+                <div className="font-medium text-sm">❌ {locationError}</div>
               </div>
             )}
             
             {location ? (
               <div className="animate-successPulse p-4 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-center justify-center text-green-600 mb-2">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  <span className="font-medium">Location Verified!</span>
+                  <span className="font-medium text-sm">Location Verified!</span>
                 </div>
-                <p className="text-sm text-green-600">Moving to next step...</p>
+                <p className="text-xs text-green-600">Moving to next step...</p>
               </div>
             ) : (
               <button
-                className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 transform hover:scale-105'} text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl`}
+                className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 transform hover:scale-105'} text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl text-sm`}
                 onClick={requestLocation}
                 disabled={isProcessing}
               >
                 {isProcessing ? (
                   <div className="flex items-center justify-center">
-                    <div className="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                     Checking Location...
                   </div>
                 ) : (
@@ -597,46 +574,46 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     if (step === RegistrationStep.PHONE) {
       return (
         <div className="animate-slideIn">
-          <div className="text-center p-8 bg-white rounded-2xl border shadow-lg">
-            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="text-center p-6 bg-white rounded-2xl border shadow-lg">
+            <div className="w-14 h-14 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
             </div>
             
-            <h2 className="text-xl font-bold text-gray-800 mb-3">Verify Your Phone</h2>
-            <p className="text-gray-600 mb-6">We need your phone number for order updates</p>
+            <h2 className="text-lg font-bold text-gray-800 mb-2">Verify Your Phone</h2>
+            <p className="text-gray-600 mb-4 text-sm">We need your phone number for order updates</p>
             
             {phoneError && (
               <div className="text-red-600 mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
-                <div className="font-medium">❌ {phoneError}</div>
+                <div className="font-medium text-sm">❌ {phoneError}</div>
               </div>
             )}
             
             {phone ? (
               <div className="animate-successPulse p-4 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-center justify-center text-green-600 mb-2">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  <span className="font-medium">Phone Verified!</span>
+                  <span className="font-medium text-sm">Phone Verified!</span>
                 </div>
                 <div className="flex items-center justify-center">
-                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                     📞 {phone}
                   </span>
                 </div>
-                <p className="text-sm text-green-600 mt-2">Moving to next step...</p>
+                <p className="text-xs text-green-600 mt-2">Moving to next step...</p>
               </div>
             ) : (
               <button
-                className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 transform hover:scale-105'} text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl`}
+                className={`w-full ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 transform hover:scale-105'} text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl text-sm`}
                 onClick={requestPhone}
                 disabled={isProcessing}
               >
                 {isProcessing ? (
                   <div className="flex items-center justify-center">
-                    <div className="animate-spin mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                     Verifying Phone...
                   </div>
                 ) : (
@@ -652,21 +629,21 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     if (step === RegistrationStep.NAME) {
       return (
         <div className="animate-slideIn">
-          <div className="text-center p-8 bg-white rounded-2xl border shadow-lg">
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="text-center p-6 bg-white rounded-2xl border shadow-lg">
+            <div className="w-14 h-14 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
             
-            <h2 className="text-xl font-bold text-gray-800 mb-3">Confirm Your Name</h2>
-            <p className="text-gray-600 mb-6">How would you like us to address you?</p>
+            <h2 className="text-lg font-bold text-gray-800 mb-2">Confirm Your Name</h2>
+            <p className="text-gray-600 mb-4 text-sm">How would you like us to address you?</p>
             
-            <div className="mb-6">
+            <div className="mb-4">
               {!isEditingName ? (
                 <div className="flex items-center justify-center space-x-3">
-                  <div className="flex items-center px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                    <span className="text-blue-800 font-medium">
+                  <div className="flex items-center px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <span className="text-blue-800 font-medium text-sm">
                       {displayName || userName || 'No name provided'}
                     </span>
                   </div>
@@ -674,28 +651,28 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
                     onClick={() => setIsEditingName(true)}
                     className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <input
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-center font-medium transition-all duration-200"
+                    className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-center font-medium transition-all duration-200 text-sm"
                     placeholder="Enter your name"
                     autoFocus
                   />
-                  <div className="flex space-x-3">
+                  <div className="flex space-x-2">
                     <button
                       onClick={() => {
                         setIsEditingName(false);
                         setDisplayName(displayName || userName);
                       }}
-                      className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg font-medium transition-all duration-200"
+                      className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-lg font-medium transition-all duration-200 text-sm"
                     >
                       ✓ Save
                     </button>
@@ -704,7 +681,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
                         setIsEditingName(false);
                         setDisplayName(userName);
                       }}
-                      className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg font-medium transition-all duration-200"
+                      className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-3 rounded-lg font-medium transition-all duration-200 text-sm"
                     >
                       Cancel
                     </button>
@@ -716,7 +693,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             {!isEditingName && (
               <button
                 onClick={submitRegistration}
-                className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-3 px-6 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 text-sm"
               >
                 Create My Account
               </button>
@@ -731,23 +708,25 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
 
   // Main render
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8 px-4">
-      <div className="max-w-md mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-4 px-4 flex flex-col">
+      <div className="max-w-md mx-auto w-full flex flex-col h-full">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-            </svg>
+        <div className="text-center mb-6">
+          <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
+            <img 
+              src={logo} 
+              alt="Magpie Logo" 
+              className="w-16 h-16 object-contain"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">
+          <h1 className="text-xl font-bold text-gray-800 mb-2">
             Welcome to Supermarket
           </h1>
-          <p className="text-gray-600">Set up your account in 3 simple steps</p>
+          <p className="text-gray-600 text-sm">Set up your account in 3 simple steps</p>
         </div>
 
         {/* Progress Steps */}
-        <div className="mb-8 space-y-2">
+        <div className="mb-6 space-y-2">
           <StepIndicator 
             stepNum={1} 
             isActive={step === RegistrationStep.LOCATION} 
@@ -772,7 +751,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         </div>
 
         {/* Current Step Content */}
-        <div className="mb-8">
+        <div className="flex-1 flex flex-col justify-center">
           {getCurrentStepContent()}
         </div>
 
@@ -784,7 +763,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
               </div>
               <h2 className="text-xl font-bold text-gray-800 mb-2">Creating Account</h2>
-              <p className="text-gray-600">Please wait while we set up your account...</p>
+              <p className="text-gray-600 text-sm">Please wait while we set up your account...</p>
             </div>
           </div>
         )}
@@ -792,18 +771,44 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         {/* Success State */}
         {step === RegistrationStep.COMPLETE && (
           <div className="fixed inset-0 bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm mx-4 animate-successScale">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
+            <div className="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm mx-4 animate-successScale">
+              <div className="relative mb-6">
+                <div className="w-24 h-24 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
+                    <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="absolute -top-2 -right-2">
+                  <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center animate-bounce">
+                    <span className="text-lg">🎉</span>
+                  </div>
+                </div>
               </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-3">Welcome Aboard!</h2>
-              <p className="text-gray-600 mb-4">Your account has been created successfully</p>
-              <div className="flex items-center justify-center">
-                <span className="px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                  🎉 Ready to shop!
-                </span>
+              
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 mb-2 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                  Welcome Aboard!
+                </h2>
+                <p className="text-gray-600 mb-4">Your account has been created successfully</p>
+                
+                <div className="flex items-center justify-center mb-4">
+                  <div className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-100 to-blue-100 rounded-full">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm font-medium text-green-800">Ready to shop!</span>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{animationDelay: '0.5s'}}></div>
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <p className="text-xs text-gray-500 mb-2">Redirecting you to the app...</p>
+                  <div className="flex justify-center space-x-1">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                    <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -829,36 +834,10 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
                   phoneRequestActiveRef.current = false;
                   phoneResolvedRef.current = false;
                 }}
-                className="bg-red-500 hover:bg-red-600 text-white py-2 px-6 rounded-lg font-medium transition-all duration-200"
+                className="bg-red-500 hover:bg-red-600 text-white py-2 px-6 rounded-lg font-medium transition-all duration-200 text-sm"
               >
                 Try Again
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* Debug Console */}
-        {debugLogs.length > 0 && (
-          <div className="mt-8 p-4 bg-gray-900 text-green-400 rounded-lg text-xs overflow-auto max-h-48 font-mono">
-            <div className="flex justify-between items-center mb-2">
-              <span className="font-bold">Debug Console ({debugLogs.length})</span>
-              <button
-                onClick={() => setDebugLogs([])}
-                className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
-              >
-                Clear
-              </button>
-            </div>
-            <div className="space-y-1">
-              {debugLogs.slice(-10).map((log, i) => (
-                <div key={i} className={`${
-                  log.startsWith('ERROR') ? 'text-red-400' :
-                  log.startsWith('WARN') ? 'text-yellow-400' :
-                  log.includes('✅') ? 'text-green-400' : 'text-gray-300'
-                }`}>
-                  {log}
-                </div>
-              ))}
             </div>
           </div>
         )}
@@ -868,7 +847,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           @keyframes slideIn {
             from { 
               opacity: 0; 
-              transform: translateY(30px); 
+              transform: translateY(20px); 
             }
             to { 
               opacity: 1; 
@@ -893,11 +872,19 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           
           @keyframes successScale {
             0% { 
-              transform: scale(0.8) rotate(-5deg); 
+              transform: scale(0.8) rotate(-10deg); 
               opacity: 0; 
             }
+            25% { 
+              transform: scale(0.9) rotate(-5deg); 
+              opacity: 0.3; 
+            }
             50% { 
-              transform: scale(1.05) rotate(2deg); 
+              transform: scale(1.1) rotate(5deg); 
+              opacity: 0.7; 
+            }
+            75% { 
+              transform: scale(1.05) rotate(-2deg); 
               opacity: 0.9; 
             }
             100% { 
@@ -915,7 +902,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           }
           
           .animate-successScale {
-            animation: successScale 0.8s ease-out;
+            animation: successScale 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
           }
         `}</style>
       </div>
