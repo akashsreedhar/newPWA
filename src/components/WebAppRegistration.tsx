@@ -200,136 +200,112 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   };
 
   // FIXED phone request function - The issue was with the event listener setup
-  const requestPhone = async () => {
-    if (isProcessing || phoneRequestActiveRef.current) return;
-    
-    setIsProcessing(true);
-    setPhoneError('');
-    phoneRequestActiveRef.current = true;
-    phoneResolvedRef.current = false;
-    
-    console.log('🚀 Starting phone request process');
-    
-    if (!tgWebApp) {
-      setPhoneError('Telegram WebApp is not available');
-      setIsProcessing(false);
-      phoneRequestActiveRef.current = false;
-      return;
-    }
+const requestPhone = async () => {
+  if (isProcessing || phoneRequestActiveRef.current) return;
 
-    try {
-      const phoneNumber = await new Promise<string>((resolve, reject) => {
-        let timeoutId: NodeJS.Timeout;
-        
-        // Success handler
-        const handleSuccess = (phone: string) => {
-          if (phoneResolvedRef.current) return; // Already resolved
-          
-          phoneResolvedRef.current = true;
-          console.log('✅ Phone request successful:', phone);
-          
-          // Cleanup
-          if (timeoutId) clearTimeout(timeoutId);
-          
-          resolve(phone);
-        };
-        
-        // Error handler
-        const handleError = (errorMsg: string) => {
-          if (phoneResolvedRef.current) return; // Already resolved
-          
-          phoneResolvedRef.current = true;
-          console.error('❌ Phone request failed:', errorMsg);
-          
-          // Cleanup
-          if (timeoutId) clearTimeout(timeoutId);
-          
-          reject(new Error(errorMsg));
-        };
-        
-        // FIXED: Use a global listener that checks all custom method events
-        const globalEventHandler = (event: Event) => {
-          try {
-            const customEvent = event as CustomEvent;
-            const data = customEvent.detail;
-            
-            console.log('🎯 Global custom method event received:', data?.req_id || 'no req_id');
-            
-            if (data && data.result && typeof data.result === 'string' && data.result.includes('contact=')) {
-              console.log('📞 Found contact data in event');
-              const phone = extractPhoneNumber(data.result);
-              if (phone) {
-                handleSuccess(phone);
-              }
-            }
-          } catch (err) {
-            console.error('Error processing global custom method event:', err);
+  setIsProcessing(true);
+  setPhoneError('');
+  phoneRequestActiveRef.current = true;
+  phoneResolvedRef.current = false;
+
+  console.log('🚀 Starting phone request process');
+
+  if (!tgWebApp) {
+    setPhoneError('Telegram WebApp is not available');
+    setIsProcessing(false);
+    phoneRequestActiveRef.current = false;
+    return;
+  }
+
+  try {
+    const phoneNumber = await new Promise<string>((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+
+      const handleSuccess = (phone: string) => {
+        if (phoneResolvedRef.current) return;
+        phoneResolvedRef.current = true;
+        console.log('✅ Phone request successful:', phone);
+        if (timeoutId) clearTimeout(timeoutId);
+        cleanup();
+        resolve(phone);
+      };
+
+      const handleError = (errorMsg: string) => {
+        if (phoneResolvedRef.current) return;
+        phoneResolvedRef.current = true;
+        console.error('❌ Phone request failed:', errorMsg);
+        if (timeoutId) clearTimeout(timeoutId);
+        cleanup();
+        reject(new Error(errorMsg));
+      };
+
+      // Listen for both custom_method_invoked and receiveEvent
+      const globalEventHandler = (event: Event) => {
+        try {
+          let data;
+          if ((event as CustomEvent).detail) {
+            data = (event as CustomEvent).detail;
+          } else if ((event as any).data) {
+            data = (event as any).data;
           }
-        };
-        
-        // Add the global event listener
-        window.addEventListener('custom_method_invoked', globalEventHandler);
-        
-        // Start the contact request
-        console.log('📱 Requesting contact from Telegram...');
-        tgWebApp.requestContact((result: any) => {
-          console.log('📞 Contact callback received:', !!result);
-          
-          // Try to get phone from direct callback first
-          if (result && result.phone_number) {
-            console.log('✅ Got phone from direct callback:', result.phone_number);
-            handleSuccess(result.phone_number);
-            return;
+          // For receiveEvent, check if type is custom_method_invoked
+          if (data?.type === 'custom_method_invoked' && data?.result && typeof data.result === 'string' && data.result.includes('contact=')) {
+            console.log('🎯 Found contact data in receiveEvent');
+            const phone = extractPhoneNumber(data.result);
+            if (phone) handleSuccess(phone);
           }
-          
-          // If no direct phone, the data should come through custom method events
-          console.log('ℹ️ No direct phone in callback, waiting for custom method events...');
-        });
-        
-        // Set timeout - 25 seconds to be safe
-        timeoutId = setTimeout(() => {
-          if (!phoneResolvedRef.current) {
-            window.removeEventListener('custom_method_invoked', globalEventHandler);
-            console.warn('⏰ Phone request timed out after 25 seconds');
-            handleError('Contact request timed out');
+          // For direct custom_method_invoked
+          if (data?.result && typeof data.result === 'string' && data.result.includes('contact=')) {
+            console.log('🎯 Found contact data in custom_method_invoked');
+            const phone = extractPhoneNumber(data.result);
+            if (phone) handleSuccess(phone);
           }
-        }, 25000);
-        
-        // Cleanup function for when promise resolves/rejects
-        const cleanup = () => {
-          window.removeEventListener('custom_method_invoked', globalEventHandler);
-        };
-        
-        // Ensure cleanup happens on both success and error
-        setTimeout(() => {
-          if (phoneResolvedRef.current) {
-            cleanup();
-          }
-        }, 1000);
+        } catch (err) {
+          console.error('Error processing global custom method event:', err);
+        }
+      };
+
+      window.addEventListener('custom_method_invoked', globalEventHandler);
+      window.addEventListener('receiveEvent', globalEventHandler);
+
+      const cleanup = () => {
+        window.removeEventListener('custom_method_invoked', globalEventHandler);
+        window.removeEventListener('receiveEvent', globalEventHandler);
+      };
+
+      console.log('📱 Requesting contact from Telegram...');
+      tgWebApp.requestContact((result: any) => {
+        console.log('📞 Contact callback received:', !!result);
+        if (result && result.phone_number) {
+          console.log('✅ Got phone from direct callback:', result.phone_number);
+          handleSuccess(result.phone_number);
+          return;
+        }
+        console.log('ℹ️ No direct phone in callback, waiting for custom method events...');
       });
-      
-      // Success! We got the phone number
-      console.log('🎉 Successfully retrieved phone number:', phoneNumber);
-      setPhone(phoneNumber);
-      
-      // Proceed with registration
-      await submitRegistration(phoneNumber, location);
-      
-    } catch (error: any) {
-      console.error('💥 Phone request error:', error?.message || 'Unknown error');
-      
-      let errorMessage = 'Failed to get phone number. Please try again.';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      
-      setPhoneError(errorMessage);
-      setIsProcessing(false);
-    } finally {
-      phoneRequestActiveRef.current = false;
-    }
-  };
 
+      timeoutId = setTimeout(() => {
+        if (!phoneResolvedRef.current) {
+          console.warn('⏰ Phone request timed out after 25 seconds');
+          handleError('Contact request timed out');
+        }
+      }, 25000);
+    });
+
+    console.log('🎉 Successfully retrieved phone number:', phoneNumber);
+    setPhone(phoneNumber);
+    await submitRegistration(phoneNumber, location);
+
+  } catch (error: any) {
+    console.error('💥 Phone request error:', error?.message || 'Unknown error');
+    let errorMessage = 'Failed to get phone number. Please try again.';
+    if (error instanceof Error) errorMessage = error.message;
+    setPhoneError(errorMessage);
+    setIsProcessing(false);
+  } finally {
+    phoneRequestActiveRef.current = false;
+  }
+};
   // Submit registration data to backend
   const submitRegistration = async (phoneNumber?: string, locationData?: any) => {
     setStep(RegistrationStep.SUBMITTING);
