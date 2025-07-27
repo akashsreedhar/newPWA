@@ -712,13 +712,16 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       <div className="max-w-md mx-auto w-full flex flex-col h-full">
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
-            <img 
-              src={logo} 
-              alt="Magpie Web" 
-              className="w-20 h-20 object-cover"
-            />
-          </div>
+          <div className="w-20 h-20 mx-auto mb-4">
+  <img 
+    src={logo} 
+    alt="Magpie Web" 
+    className="w-20 h-20 object-contain"
+    style={{
+      filter: 'drop-shadow(0 10px 20px rgba(0, 0, 0, 0.2)) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.15)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))'
+    }}
+  />
+</div>
           <h1 className="text-xl font-bold text-gray-800 mb-2">
             Welcome to Safari Cheemeni
           </h1>
