@@ -191,93 +191,135 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
     }
     
     try {
-      // Setup event listener for the custom method response
-      const contactData = await new Promise<{ phone_number?: string }>((resolve, reject) => {
-        let requestCompleted = false;
-        let timeoutId: ReturnType<typeof setTimeout>;
+      // This simplified approach handles both direct callback and custom method responses
+      const phoneNumber = await new Promise<string>((resolve, reject) => {
+        // Flag to prevent duplicate resolutions
+        let isResolved = false;
         
-        // Create event listener for custom method response
-        const handleCustomMethod = (event: any) => {
-          const data = event.detail;
-          console.log('Received custom method event:', data);
-          
-          // Make sure this is a getRequestedContact response
-          if (data && data.result && data.result.includes('contact=')) {
-            window.removeEventListener('custom_method_invoked', handleCustomMethod);
-            clearTimeout(timeoutId);
-            requestCompleted = true;
-            
-            const contact = parseContactData(data.result);
-            console.log('Parsed contact data:', contact);
-            resolve(contact);
+        // Function to handle successful phone retrieval
+        const handlePhoneSuccess = (phone: string) => {
+          if (!isResolved) {
+            isResolved = true;
+            console.log('Successfully received phone number');
+            resolve(phone);
           }
         };
         
-        // Add event listener
-        window.addEventListener('custom_method_invoked', handleCustomMethod);
+        // Parse contact data helper
+        const extractPhoneFromResult = (resultStr: string): string | null => {
+          try {
+            if (resultStr.includes('contact=')) {
+              const contactParam = resultStr.split('contact=')[1].split('&')[0];
+              const decodedContact = decodeURIComponent(contactParam);
+              const contactData = JSON.parse(decodedContact);
+              return contactData.phone_number || null;
+            }
+            return null;
+          } catch (err) {
+            console.error('Failed to parse contact data:', err);
+            return null;
+          }
+        };
         
-        // Request contact directly (simplified approach)
-        tgWebApp.requestContact((result) => {
-          console.log('Contact callback result:', result ? 'has data' : 'no data');
+        // Store all event handlers to clean them up later
+        const eventHandlers: { event: string, handler: any }[] = [];
+        
+        // 1. Setup event listener for custom method response
+        const handleCustomMethod = (event: any) => {
+          const data = event.detail;
+          console.log('Received custom method event');
           
-          // The actual data will come through the custom_method_invoked event
-          // So we don't need to do anything here
+          if (data?.result && data.result.includes('contact=')) {
+            const phone = extractPhoneFromResult(data.result);
+            if (phone) {
+              handlePhoneSuccess(phone);
+            }
+          }
+        };
+        
+        // Add event listener and store it for cleanup
+        window.addEventListener('custom_method_invoked', handleCustomMethod);
+        eventHandlers.push({ event: 'custom_method_invoked', handler: handleCustomMethod });
+        
+        // 2. Direct request for contact
+        tgWebApp.requestContact((result) => {
+          console.log('Contact callback triggered', result ? 'with data' : 'without data');
+          
+          // If we got a result with phone_number directly, use it
           if (result && result.phone_number) {
-            requestCompleted = true;
-            window.removeEventListener('custom_method_invoked', handleCustomMethod);
-            clearTimeout(timeoutId);
-            resolve(result);
+            handlePhoneSuccess(result.phone_number);
           }
         });
         
-        // Set timeout for failure
-        timeoutId = setTimeout(() => {
-          if (!requestCompleted) {
-            window.removeEventListener('custom_method_invoked', handleCustomMethod);
-            console.warn('Contact request timed out, trying to get contact with custom method');
+        // Utility function to remove all event listeners
+        const cleanupEventListeners = () => {
+          eventHandlers.forEach(({event, handler}) => {
+            window.removeEventListener(event, handler);
+          });
+        };
+        
+        // 3. Set a timeout to try direct custom method
+        const timeoutId = setTimeout(() => {
+          if (!isResolved) {
+            console.log('No contact data yet, trying direct custom method call');
             
-            // Try to get the contact data via custom method as last resort
-            const reqId = 'contact_' + Math.random().toString(36).substring(2, 15);
+            // Generate a unique request ID
+            const reqId = 'phone_req_' + Date.now().toString(36);
             
-            const customMethodTimeout = setTimeout(() => {
-              reject(new Error('Contact request timed out completely'));
-            }, 5000);
-            
-            const customMethodHandler = (event: any) => {
+            // Handler for this specific request
+            const directCustomMethodHandler = (event: any) => {
               const data = event.detail;
-              if (data && data.req_id === reqId) {
-                window.removeEventListener('custom_method_invoked', customMethodHandler);
-                clearTimeout(customMethodTimeout);
-                
-                if (data.result && data.result.includes('contact=')) {
-                  const contact = parseContactData(data.result);
-                  console.log('Custom method contact data:', contact);
-                  resolve(contact);
-                } else {
-                  reject(new Error('Invalid contact data format'));
+              if (data?.req_id === reqId && data.result) {
+                const phone = extractPhoneFromResult(data.result);
+                if (phone) {
+                  handlePhoneSuccess(phone);
                 }
               }
             };
             
-            window.addEventListener('custom_method_invoked', customMethodHandler);
-            tgWebApp.invokeCustomMethod('getRequestedContact', {}, reqId);
+            // Add the handler and store it
+            window.addEventListener('custom_method_invoked', directCustomMethodHandler);
+            eventHandlers.push({ event: 'custom_method_invoked', handler: directCustomMethodHandler });
+            
+            // Make the direct custom method call
+            try {
+              tgWebApp.invokeCustomMethod('getRequestedContact', {}, reqId);
+            } catch (e) {
+              console.error('Error invoking custom method:', e);
+            }
+            
+            // Set final timeout
+            setTimeout(() => {
+              if (!isResolved) {
+                cleanupEventListeners();
+                reject(new Error('Contact request timed out'));
+              }
+            }, 5000);
           }
-        }, 8000);
+        }, 3000);
+        
+        // Make sure we clean up on success
+        setTimeout(() => {
+          if (isResolved) {
+            cleanupEventListeners();
+            clearTimeout(timeoutId);
+          }
+        }, 1000);
       });
       
-      if (!contactData || !contactData.phone_number) {
-        throw new Error('No phone number received');
+      if (!phoneNumber) {
+        throw new Error('No valid phone number received');
       }
       
-      console.log('Phone number received:', contactData.phone_number);
+      console.log('Phone number successfully extracted:', phoneNumber);
       
       // Phone is provided, proceed with registration
-      setPhone(contactData.phone_number);
-      submitRegistration(contactData.phone_number, location);
+      setPhone(phoneNumber);
+      submitRegistration(phoneNumber, location);
       
     } catch (error: any) {
-      console.error('Phone error:', error);
-      setPhoneError(error.message || 'Failed to get phone number. Please try again.');
+      console.error('Phone error:', error?.message || 'Unknown error');
+      setPhoneError(error?.message || 'Failed to get phone number. Please try again.');
       setIsProcessing(false);
     }
   };
