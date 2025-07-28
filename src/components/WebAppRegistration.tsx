@@ -122,13 +122,13 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
               let errorMessage = 'Location access denied. ';
               switch (error.code) {
                 case error.PERMISSION_DENIED:
-                  errorMessage += 'Please enable location access in your browser settings and try again.';
+                  errorMessage += 'Please enable location access in your device settings and try again.';
                   break;
                 case error.POSITION_UNAVAILABLE:
                   errorMessage += 'Location information is unavailable. Please check your device settings.';
                   break;
                 case error.TIMEOUT:
-                  errorMessage += 'Location request timed out. Please try again.';
+                  errorMessage += 'Please Check your settings and try again.';
                   break;
                 default:
                   errorMessage += 'Please enable location services and try again.';
@@ -640,56 +640,59 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             <h2 className="text-lg font-bold text-gray-800 mb-2">Confirm Your Name</h2>
             <p className="text-gray-600 mb-4 text-sm">How would you like us to address you?</p>
             
-            <div className="mb-4">
-              {!isEditingName ? (
-                <div className="flex items-center justify-center space-x-3">
-                  <div className="flex items-center px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                    <span className="text-blue-800 font-medium text-sm">
-                      {displayName || userName || 'No name provided'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setIsEditingName(true)}
-                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-center font-medium transition-all duration-200 text-sm"
-                    placeholder="Enter your name"
-                    autoFocus
-                  />
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => {
-                        setIsEditingName(false);
-                        setDisplayName(displayName || userName);
-                      }}
-                      className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-lg font-medium transition-all duration-200 text-sm"
-                    >
-                      ✓ Save
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEditingName(false);
-                        setDisplayName(userName);
-                      }}
-                      className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-3 rounded-lg font-medium transition-all duration-200 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+
+<div className="mb-4">
+  {!isEditingName ? (
+    <div
+      className="group flex items-center justify-center cursor-pointer"
+      onClick={() => setIsEditingName(true)}
+      tabIndex={0}
+      role="button"
+      aria-label="Edit name"
+      onKeyPress={e => { if (e.key === 'Enter' || e.key === ' ') setIsEditingName(true); }}
+    >
+      <div className="flex items-center px-5 py-3 bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-300 rounded-xl shadow transition-all duration-200 group-hover:shadow-lg group-hover:border-blue-400 group-hover:bg-blue-100">
+        <span className="text-blue-900 font-semibold text-base tracking-wide mr-2">
+          {displayName || userName || 'No name provided'}
+        </span>
+        <svg className="w-5 h-5 text-blue-500 opacity-70 group-hover:opacity-100 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+      </div>
+    </div>
+  ) : (
+    <div className="space-y-3">
+      <input
+        type="text"
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+        className="w-full px-4 py-2 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:outline-none text-center font-semibold transition-all duration-200 text-base shadow"
+        placeholder="Enter your name"
+        autoFocus
+      />
+      <div className="flex space-x-2">
+        <button
+          onClick={() => {
+            setIsEditingName(false);
+            setDisplayName(displayName || userName);
+          }}
+          className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-lg font-medium transition-all duration-200 text-sm"
+        >
+          ✓ Save
+        </button>
+        <button
+          onClick={() => {
+            setIsEditingName(false);
+            setDisplayName(userName);
+          }}
+          className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-3 rounded-lg font-medium transition-all duration-200 text-sm"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )}
+</div>
             
             {!isEditingName && (
               <button
