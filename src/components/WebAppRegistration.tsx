@@ -758,8 +758,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           {getCurrentStepContent()}
         </div>
 {/* Professional Footer */}
-<footer className="mt-8 pt-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg">
-  <div className="flex items-center justify-center px-4 py-3">
+<footer className="mt-8 pt-6 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg">  <div className="flex items-center justify-center px-4 py-3">
     <div className="flex items-center space-x-2">
       {/* Logo Text with Professional Styling - Increased size */}
       <motion.div
