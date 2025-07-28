@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BOT_SERVER_URL } from '../config';
 import safariLogo from '../images/Logo.png';
 import { motion } from "framer-motion";
+
 // Define props interface
 interface WebAppRegistrationProps {
   initData: string;
@@ -709,7 +710,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   // Main render
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-4 px-4 flex flex-col">
-      <div className="max-w-md mx-auto w-full flex flex-col h-full">
+      <div className="max-w-md mx-auto w-full flex flex-col h-full pb-28">
         {/* Header */}
         <div className="text-center mb-6">
           <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
@@ -757,63 +758,6 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         <div className="flex-1 flex flex-col justify-center">
           {getCurrentStepContent()}
         </div>
-{/* Professional Footer */}
-<footer className="mt-8 pt-6 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg">  <div className="flex items-center justify-center px-4 py-3">
-    <div className="flex items-center space-x-2">
-      {/* Logo Text with Professional Styling - Increased size */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500"
-      >
-        Magpie Web
-      </motion.div>
-      {/* Flowing, Interconnected Lines Animation - Framer Motion */}
-      <motion.svg
-        className="w-16 h-16 text-purple-400 -ml-2" // Increased size for better visibility
-        viewBox="0 0 100 100"
-        initial="hidden"
-        animate="visible"
-      >
-        <motion.path
-          d="M20,50 Q35,20 50,50 T80,50"
-          stroke="currentColor"
-          strokeWidth="3"
-          fill="none"
-          variants={{
-            hidden: { pathLength: 0, opacity: 0 },
-            visible: {
-              pathLength: 1,
-              opacity: 1,
-              transition: {
-                pathLength: { duration: 2, ease: "easeInOut" },
-                opacity: { duration: 0.5 },
-              },
-            },
-          }}
-        />
-        <motion.path
-          d="M30,40 Q45,60 60,40"
-          stroke="currentColor"
-          strokeWidth="3"
-          fill="none"
-          variants={{
-            hidden: { pathLength: 0, opacity: 0 },
-            visible: {
-              pathLength: 1,
-              opacity: 1,
-              transition: {
-                pathLength: { duration: 2, ease: "easeInOut", delay: 0.3 },
-                opacity: { duration: 0.5, delay: 0.3 },
-              },
-            },
-          }}
-        />
-      </motion.svg>
-    </div>
-  </div>
-</footer>
 
         {/* Submitting State */}
         {step === RegistrationStep.SUBMITTING && (
@@ -966,6 +910,65 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
           }
         `}</style>
       </div>
+
+      {/* Fixed Footer */}
+      <footer className="fixed left-0 bottom-0 w-full z-40 bg-gradient-to-r from-gray-50 to-blue-50 rounded-t-lg shadow-lg">
+        <div className="flex items-center justify-center px-4 py-3">
+          <div className="flex items-center space-x-2">
+            {/* Logo Text with Professional Styling */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500"
+            >
+              Magpie Web
+            </motion.div>
+            {/* Flowing, Interconnected Lines Animation */}
+            <motion.svg
+              className="w-16 h-16 text-purple-400 -ml-2"
+              viewBox="0 0 100 100"
+              initial="hidden"
+              animate="visible"
+            >
+              <motion.path
+                d="M20,50 Q35,20 50,50 T80,50"
+                stroke="currentColor"
+                strokeWidth="3"
+                fill="none"
+                variants={{
+                  hidden: { pathLength: 0, opacity: 0 },
+                  visible: {
+                    pathLength: 1,
+                    opacity: 1,
+                    transition: {
+                      pathLength: { duration: 2, ease: "easeInOut" },
+                      opacity: { duration: 0.5 },
+                    },
+                  },
+                }}
+              />
+              <motion.path
+                d="M30,40 Q45,60 60,40"
+                stroke="currentColor"
+                strokeWidth="3"
+                fill="none"
+                variants={{
+                  hidden: { pathLength: 0, opacity: 0 },
+                  visible: {
+                    pathLength: 1,
+                    opacity: 1,
+                    transition: {
+                      pathLength: { duration: 2, ease: "easeInOut", delay: 0.3 },
+                      opacity: { duration: 0.5, delay: 0.3 },
+                    },
+                  },
+                }}
+              />
+            </motion.svg>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
