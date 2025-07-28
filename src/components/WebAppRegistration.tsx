@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BOT_SERVER_URL } from '../config';
-import logo from '../images/Magpieweblogo.png';
+import safariLogo from '../images/Logo.png';
 
 // Define props interface
 interface WebAppRegistrationProps {
@@ -712,16 +712,16 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       <div className="max-w-md mx-auto w-full flex flex-col h-full">
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="w-20 h-20 mx-auto mb-4">
-  <img 
-    src={logo} 
-    alt="Magpie Web" 
-    className="w-20 h-20 object-contain"
-    style={{
-      filter: 'drop-shadow(0 10px 20px rgba(0, 0, 0, 0.2)) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.15)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))'
-    }}
-  />
-</div>
+          <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+            <img
+              src={safariLogo}
+              alt="Safari Cheemeni Logo"
+              className="w-20 h-20 rounded-full object-cover shadow-lg"
+              style={{
+                boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 1.5px 4px rgba(0,0,0,0.10)'
+              }}
+            />
+          </div>
           <h1 className="text-xl font-bold text-gray-800 mb-2">
             Welcome to Safari Cheemeni
           </h1>
@@ -757,6 +757,72 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         <div className="flex-1 flex flex-col justify-center">
           {getCurrentStepContent()}
         </div>
+
+        {/* Professional Footer */}
+        <footer className="mt-8 pt-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg">
+          <div className="flex items-center justify-center px-4 py-3">
+            <div className="flex items-center space-x-2">
+              {/* Logo Text with Professional Styling */}
+              <div className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-500 via-blue-500 to-purple-600">
+                Magpie Web
+              </div>
+
+              {/* Animated SVG Logo */}
+              <div className="relative">
+                <svg
+                  className="w-12 h-12 text-purple-500 -ml-2"
+                  viewBox="0 0 100 100"
+                >
+                  <path
+                    d="M20,50 Q35,20 50,50 T80,50"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    fill="none"
+                    className="animate-pulse"
+                  />
+                  <path
+                    d="M30,40 Q45,60 60,40"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    fill="none"
+                    className="animate-pulse"
+                    style={{ animationDelay: '0.5s' }}
+                  />
+                  {/* Additional decorative elements */}
+                  <circle 
+                    cx="25" 
+                    cy="50" 
+                    r="2" 
+                    fill="currentColor" 
+                    className="animate-pulse"
+                  />
+                  <circle 
+                    cx="75" 
+                    cy="50" 
+                    r="2" 
+                    fill="currentColor" 
+                    className="animate-pulse"
+                    style={{ animationDelay: '1s' }}
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+          
+          {/* Professional tagline */}
+          <div className="text-center pb-4">
+            <p className="text-xs text-gray-500 font-medium">
+              Developed with ❤️ by Magpie Web Solutions
+            </p>
+            <div className="flex items-center justify-center mt-2 space-x-1">
+              <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
+              <p className="text-xs text-gray-400">
+                Innovative • Reliable • Professional
+              </p>
+              <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+            </div>
+          </div>
+        </footer>
 
         {/* Submitting State */}
         {step === RegistrationStep.SUBMITTING && (
