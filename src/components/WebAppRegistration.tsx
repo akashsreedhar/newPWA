@@ -772,7 +772,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
       </motion.div>
       {/* Flowing, Interconnected Lines Animation - Framer Motion */}
       <motion.svg
-        className="w-24 h-24 text-purple-400 -ml-4" // Increased size for better visibility
+        className="w-16 h-16 text-purple-400 -ml-2" // Increased size for better visibility
         viewBox="0 0 100 100"
         initial="hidden"
         animate="visible"
