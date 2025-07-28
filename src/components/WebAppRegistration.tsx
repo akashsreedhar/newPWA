@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BOT_SERVER_URL } from '../config';
 import safariLogo from '../images/Logo.png';
-
+import { motion } from "framer-motion";
 // Define props interface
 interface WebAppRegistrationProps {
   initData: string;
@@ -762,33 +762,56 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
   <div className="flex items-center justify-center px-4 py-3">
     <div className="flex items-center space-x-2">
       {/* Logo Text with Professional Styling - Increased size */}
-      <div className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+        className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500"
+      >
         Magpie Web
-      </div>
-
-      {/* Flowing, Interconnected Lines Animation - Increased size */}
-      <div className="relative">
-        <svg
-          className="w-16 h-16 text-purple-400 -ml-4"
-          viewBox="0 0 100 100"
-        >
-          <path
-            d="M20,50 Q35,20 50,50 T80,50"
-            stroke="currentColor"
-            strokeWidth="2"
-            fill="none"
-            className="animate-pulse"
-          />
-          <path
-            d="M30,40 Q45,60 60,40"
-            stroke="currentColor"
-            strokeWidth="2"
-            fill="none"
-            className="animate-pulse"
-            style={{ animationDelay: '0.5s' }}
-          />
-        </svg>
-      </div>
+      </motion.div>
+      {/* Flowing, Interconnected Lines Animation - Framer Motion */}
+      <motion.svg
+        className="w-24 h-24 text-purple-400 -ml-4" // Increased size for better visibility
+        viewBox="0 0 100 100"
+        initial="hidden"
+        animate="visible"
+      >
+        <motion.path
+          d="M20,50 Q35,20 50,50 T80,50"
+          stroke="currentColor"
+          strokeWidth="3"
+          fill="none"
+          variants={{
+            hidden: { pathLength: 0, opacity: 0 },
+            visible: {
+              pathLength: 1,
+              opacity: 1,
+              transition: {
+                pathLength: { duration: 2, ease: "easeInOut" },
+                opacity: { duration: 0.5 },
+              },
+            },
+          }}
+        />
+        <motion.path
+          d="M30,40 Q45,60 60,40"
+          stroke="currentColor"
+          strokeWidth="3"
+          fill="none"
+          variants={{
+            hidden: { pathLength: 0, opacity: 0 },
+            visible: {
+              pathLength: 1,
+              opacity: 1,
+              transition: {
+                pathLength: { duration: 2, ease: "easeInOut", delay: 0.3 },
+                opacity: { duration: 0.5, delay: 0.3 },
+              },
+            },
+          }}
+        />
+      </motion.svg>
     </div>
   </div>
 </footer>

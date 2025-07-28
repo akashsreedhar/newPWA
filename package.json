@@ -13,6 +13,7 @@
     "@headlessui/react": "^2.2.4",
     "@types/react-router-dom": "^5.3.3",
     "firebase": "^11.10.0",
+    "framer-motion": "^12.23.10",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
