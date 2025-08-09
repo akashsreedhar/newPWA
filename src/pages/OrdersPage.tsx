@@ -395,7 +395,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
       // 🔴 FIX: Find the order object from state
       const order = orders.find(o => o.id === orderId);
       if (order) {
-        await fetch(`${process.env.REACT_APP_BACKEND_URL}/notify-user-order`, {
+await fetch(`${import.meta.env.VITE_BACKEND_URL}/notify-user-order`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

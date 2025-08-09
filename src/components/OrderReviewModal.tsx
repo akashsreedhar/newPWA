@@ -1007,9 +1007,9 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   ) : (
                     <>
                       {paymentMethod === 'cod' ? (
-                        <span>🚀 Place Order (COD){rateLimitStatus.exemptionReason ? ' (Using Exemption)' : ''}</span>
+                        <span>🚀 Place Order (COD)</span>
                       ) : (
-                        <span>💳 Pay ₹{total.toFixed(2)} & Place Order{rateLimitStatus.exemptionReason ? ' (Using Exemption)' : ''}</span>
+                        <span>💳 Pay ₹{total.toFixed(2)} & Place Order</span>
                       )}
                     </>
                   )}
