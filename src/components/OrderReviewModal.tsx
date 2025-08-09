@@ -109,6 +109,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
   const backendResultTimeout = useRef<NodeJS.Timeout | null>(null);
 
+  const waitingForBackendRef = useRef(false);
+
   const [rateLimitStatus, setRateLimitStatus] = useState<{
     checking: boolean;
     allowed: boolean;
@@ -212,6 +214,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       setRateLimitStatus({ checking: false, allowed: true });
       orderPlacementRef.current = false;
       orderIdRef.current = null;
+      waitingForBackendRef.current = false;
       if (progressInterval.current) clearInterval(progressInterval.current);
       if (confettiTimeout.current) clearTimeout(confettiTimeout.current);
       if (checkmarkTimeout.current) clearTimeout(checkmarkTimeout.current);
@@ -314,17 +317,21 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       const success = !!e.detail?.success;
       const message = e.detail?.message as string | undefined;
 
+      waitingForBackendRef.current = false;
       if (backendResultTimeout.current) {
         clearTimeout(backendResultTimeout.current);
         backendResultTimeout.current = null;
       }
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
 
       if (success) {
         setOrderPlaced(true);
-        // If we’re in progress or payment, proceed to success
+        setProgress(100);
         runSuccessAnimations();
       } else {
-        // Failure: show error and reset UI to idle
         setError(message || 'Failed to place order. Please try again.');
         setStep('idle');
         setProgress(0);
@@ -337,6 +344,68 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       window.removeEventListener('orderPlacementResult', handler as EventListener);
     };
   }, [runSuccessAnimations]);
+
+  // Animate progress patiently up to 90% while waiting
+  const startProgressToNinety = () => {
+    if (progressInterval.current) clearInterval(progressInterval.current);
+    setStep('progress');
+    setProgress(5);
+    progressInterval.current = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 90) return 90;
+        const inc = Math.max(1, Math.min(6, Math.random() * 8));
+        return Math.min(prev + inc, 90);
+      });
+    }, 140);
+  };
+
+  // COD: place order immediately; animate while waiting
+  const startImmediatePlacementCOD = useCallback(async () => {
+    startProgressToNinety();
+
+    try {
+      // Use exemption token before placing order if available (non-blocking if fails)
+      if (rateLimitStatus.exemptionReason) {
+        try { await telegramRateLimit.useExemptionToken(); } catch (e) { console.error('Exemption token failed:', e); }
+      }
+
+      const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
+      waitingForBackendRef.current = true;
+
+      const maybePromise = onPlaceOrder && onPlaceOrder({
+        address: selectedAddress,
+        message,
+        paymentMethod: 'cod',
+        customerName: user?.name,
+        customerPhone: user?.phone,
+        cartItems: enrichedCartItems,
+      });
+      await Promise.resolve(maybePromise);
+
+      if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
+      backendResultTimeout.current = setTimeout(() => {
+        if (!waitingForBackendRef.current) return;
+        setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
+        if (progressInterval.current) {
+          clearInterval(progressInterval.current);
+          progressInterval.current = null;
+        }
+        setStep('idle');
+        setProgress(0);
+        orderPlacementRef.current = false;
+        waitingForBackendRef.current = false;
+      }, 15000);
+    } catch (error) {
+      console.error('Order placement failed:', error);
+      if (progressInterval.current) clearInterval(progressInterval.current);
+      progressInterval.current = null;
+      setError('Failed to place order. Please try again.');
+      setStep('idle');
+      setProgress(0);
+      orderPlacementRef.current = false;
+      waitingForBackendRef.current = false;
+    }
+  }, [cartItems, message, onPlaceOrder, rateLimitStatus.exemptionReason, selectedAddress, user?.name, user?.phone]);
 
   // Razorpay Payment Handler (uses centralized BACKEND_URL)
   const handleRazorpayPayment = async () => {
@@ -422,20 +491,17 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               setProcessingPayment(false);
               setVerifyingPayment(false);
 
-              // Use exemption token if available before placing order
+              // Use exemption token before placing order if available (non-blocking if fails)
               if (rateLimitStatus.exemptionReason) {
-                try {
-                  await telegramRateLimit.useExemptionToken();
-                } catch (exemptionError) {
-                  console.error('Failed to use exemption token:', exemptionError);
-                }
+                try { await telegramRateLimit.useExemptionToken(); } catch (e) { console.error('Exemption token failed:', e); }
               }
 
               const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
-              const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
-              orderIdRef.current = orderId;
+              waitingForBackendRef.current = true;
 
-              // Place order via parent (CartPage) and wait for backend result event
+              // Start progress and place order immediately
+              startProgressToNinety();
+
               const maybePromise = onPlaceOrder && onPlaceOrder({
                 address: selectedAddress,
                 message,
@@ -451,20 +517,20 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   status: 'paid'
                 }
               });
-
-              // Await if a promise is returned (non-breaking)
               await Promise.resolve(maybePromise);
 
-              // Show progress while waiting for backend confirmation event
-              setStep('progress');
-              setProgress(100);
-
-              // Safety timeout: if no result event comes back in time, show error
+              if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
               backendResultTimeout.current = setTimeout(() => {
+                if (!waitingForBackendRef.current) return;
                 setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
+                if (progressInterval.current) {
+                  clearInterval(progressInterval.current);
+                  progressInterval.current = null;
+                }
                 setStep('idle');
                 setProgress(0);
                 orderPlacementRef.current = false;
+                waitingForBackendRef.current = false;
               }, 15000);
             } else {
               throw new Error('Payment verification failed');
@@ -505,13 +571,13 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       enrichedItems.map(async (item) => {
         if (item.category) return;
         if (productCategoriesCache.has(item.id)) {
-          item.category = productCategoriesCache.get(item.id);
+          item.category = productCategoriesCache.get(item.id) as string;
           return;
         }
         try {
           const docSnap = await getDoc(doc(db, "products", item.id));
           if (docSnap.exists()) {
-            const data = docSnap.data();
+            const data = docSnap.data() as any;
             item.category = data.category || '';
             productCategoriesCache.set(item.id, item.category);
           }
@@ -588,7 +654,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     return null;
   };
 
-  // FIXED: Use exemption token only at order placement and wait for backend confirmation
+  // Place order entry point from button
   const handlePlaceOrder = async () => {
     if (orderPlacementRef.current || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)) {
       console.warn('Order placement blocked - rate limit or already processing');
@@ -597,21 +663,18 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     orderPlacementRef.current = true;
     setError(null);
 
+    // Pre-checks
     if (revalidateCartAvailability) {
-      const unavailableItems = await revalidateCartAvailability();
-      if (unavailableItems.length > 0) {
-        setError(
-          `Some items are out of stock: ${unavailableItems.map(i => i.name).join(', ')}`
-        );
+      const unavailableItemsRemote = await revalidateCartAvailability();
+      if (unavailableItemsRemote.length > 0) {
+        setError(`Some items are out of stock: ${unavailableItemsRemote.map(i => i.name).join(', ')}`);
         orderPlacementRef.current = false;
         return;
       }
     }
-    const unavailableItems = cartItems.filter(item => item.available === false);
-    if (unavailableItems.length > 0) {
-      setError(
-        `Some items are out of stock: ${unavailableItems.map(i => i.name).join(', ')}`
-      );
+    const unavailableItemsLocal = cartItems.filter(item => item.available === false);
+    if (unavailableItemsLocal.length > 0) {
+      setError(`Some items are out of stock: ${unavailableItemsLocal.map(i => i.name).join(', ')}`);
       orderPlacementRef.current = false;
       return;
     }
@@ -625,63 +688,14 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       orderPlacementRef.current = false;
       return;
     }
-    if (step !== 'idle') {
+    if (step !== 'idle' && step !== 'payment') {
       orderPlacementRef.current = false;
       return;
     }
 
     try {
       if (paymentMethod === 'cod') {
-        setStep('progress');
-        let prog = 0;
-        setProgress(0);
-        progressInterval.current = setInterval(() => {
-          prog += Math.random() * 18 + 7;
-          if (prog >= 100) {
-            prog = 100;
-            setProgress(100);
-            clearInterval(progressInterval.current!);
-
-            if (!orderPlaced) {
-              // Use exemption token before placing order if available
-              (async () => {
-                if (rateLimitStatus.exemptionReason) {
-                  try {
-                    await telegramRateLimit.useExemptionToken();
-                  } catch (exemptionError) {
-                    console.error('Failed to use exemption token:', exemptionError);
-                  }
-                }
-
-                const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
-                const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
-                orderIdRef.current = orderId;
-
-                if (onPlaceOrder && orderPlacementRef.current) {
-                  // Await parent placement (non-breaking if it returns void)
-                  await Promise.resolve(onPlaceOrder({
-                    address: selectedAddress,
-                    message,
-                    paymentMethod: 'cod',
-                    customerName: user?.name,
-                    customerPhone: user?.phone,
-                    cartItems: enrichedCartItems,
-                  }));
-                }
-
-                // Wait for backend confirmation event, or timeout
-                backendResultTimeout.current = setTimeout(() => {
-                  setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
-                  setStep('idle');
-                  setProgress(0);
-                  orderPlacementRef.current = false;
-                }, 15000);
-              })();
-            }
-          } else {
-            setProgress(Math.min(prog, 99));
-          }
-        }, 120);
+        await startImmediatePlacementCOD();
       } else {
         setStep('payment');
         handleRazorpayPayment();
@@ -701,6 +715,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
       if (redirectTimeout.current) clearTimeout(redirectTimeout.current);
       if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
       orderPlacementRef.current = false;
+      waitingForBackendRef.current = false;
     };
   }, []);
 

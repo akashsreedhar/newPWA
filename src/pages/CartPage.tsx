@@ -90,8 +90,8 @@ const CartPage: React.FC<CartPageProps> = ({
   // In-memory cache for per-product max order quantity
   const maxQtyRef = useRef<Record<string, number>>({});
 
-  // Helper: wrap a promise with a timeout (production hardening)
-  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 15000, label = 'Validation timed out'): Promise<T> => {
+  // Helper: wrap a promise with a timeout (snappier UX)
+  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 8000, label = 'Validation timed out'): Promise<T> => {
     let timer: any;
     return new Promise<T>((resolve, reject) => {
       timer = setTimeout(() => reject(new Error(label)), ms);
@@ -122,11 +122,8 @@ const CartPage: React.FC<CartPageProps> = ({
         // ignore
       }
     })();
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartItems.length]);
+    return () => { mounted = false; };
+  }, [getAllMaxOrderQuantities, cartItems.length]);
 
   const [rateLimitStatus, setRateLimitStatus] = useState<{
     checking: boolean;
@@ -182,64 +179,74 @@ const CartPage: React.FC<CartPageProps> = ({
     setForceValidationTrigger(prev => prev + 1);
   }, []);
 
+  // Validation run gating (prevents stale/overlapping results)
+  const validationRunIdRef = useRef(0);
+
+  const runValidation = useCallback(async (items: any[]) => {
+    const runId = ++validationRunIdRef.current;
+    setValidatingPrices(true);
+    try {
+      const result = await withTimeout(validateCartPricesAdvanced(items, true), 8000, 'Price validation timed out');
+      // Only apply if this is the latest run
+      if (runId !== validationRunIdRef.current) return;
+      if (result.hasChanges && result.priceChanges.length > 0) {
+        const convertedResult = {
+          isValid: result.isValid,
+          hasChanges: result.hasChanges,
+          updatedItems: result.updatedItems,
+          priceChanges: result.priceChanges.map((change: any) => ({
+            itemId: change.itemId,
+            itemName: change.itemName,
+            oldPrice: change.oldPrice,
+            newPrice: change.newPrice
+          })),
+          riskLevel: result.riskLevel,
+          unavailableItems: result.unavailableItems,
+          stockWarnings: result.stockWarnings
+        };
+        setPriceValidationResult(convertedResult);
+        setPriceChangeModalOpen(true);
+      } else {
+        setPriceValidationResult(null);
+      }
+    } catch (error) {
+      // swallow errors; UX handled by calling code if needed
+    } finally {
+      if (runId === validationRunIdRef.current) {
+        setValidatingPrices(false);
+      }
+    }
+  }, [withTimeout]);
+
   // Validation effect for manual trigger
   useEffect(() => {
     if (forceValidationTrigger === 0) return; // skip initial render
     const currentCartItems = latestCartItemsRef.current;
     if (currentCartItems.length === 0) return;
-
-    const validate = async () => {
-      try {
-        setValidatingPrices(true);
-        const result = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 15000, 'Price validation timed out');
-        if (result.hasChanges && result.priceChanges.length > 0) {
-          const convertedResult = {
-            isValid: result.isValid,
-            hasChanges: result.hasChanges,
-            updatedItems: result.updatedItems,
-            priceChanges: result.priceChanges.map(change => ({
-              itemId: change.itemId,
-              itemName: change.itemName,
-              oldPrice: change.oldPrice,
-              newPrice: change.newPrice
-            })),
-            riskLevel: result.riskLevel,
-            unavailableItems: result.unavailableItems,
-            stockWarnings: result.stockWarnings
-          };
-          setPriceValidationResult(convertedResult);
-          setPriceChangeModalOpen(true);
-        } else {
-          setPriceValidationResult(null);
-        }
-      } catch (error) {
-        // no-op; button state reset in finally
-      } finally {
-        setValidatingPrices(false);
-      }
-    };
-    validate();
-  }, [forceValidationTrigger, withTimeout]);
+    runValidation(currentCartItems);
+  }, [forceValidationTrigger, runValidation]);
 
   // Initialize analytics
   const analytics = useCallback(() => PriceValidationAnalytics.getInstance(), []);
 
   // Validate on load and when coming back from modals
+  // IMPORTANT: Do NOT depend on validatingPrices here (causes infinite loop)
   useEffect(() => {
     const currentCartItems = latestCartItemsRef.current;
     if (currentCartItems.length === 0) return;
-    if (validatingPrices) return;
 
     const validateOnLoad = async () => {
       try {
+        const runId = ++validationRunIdRef.current;
         setValidatingPrices(true);
-        const result = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 15000, 'Price validation timed out');
+        const result = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 8000, 'Price validation timed out');
+        if (runId !== validationRunIdRef.current) return;
         if (result.hasChanges && result.priceChanges.length > 0) {
           const convertedResult = {
             isValid: result.isValid,
             hasChanges: result.hasChanges,
             updatedItems: result.updatedItems,
-            priceChanges: result.priceChanges.map(change => ({
+            priceChanges: result.priceChanges.map((change: any) => ({
               itemId: change.itemId,
               itemName: change.itemName,
               oldPrice: change.oldPrice,
@@ -259,14 +266,17 @@ const CartPage: React.FC<CartPageProps> = ({
       } catch (error) {
         // no-op; we don't block the UI here
       } finally {
-        setValidatingPrices(false);
+        // only the latest run clears the spinner
+        if (validationRunIdRef.current) {
+          setValidatingPrices(false);
+        }
       }
     };
 
     validateOnLoad();
-  }, [priceChangeModalOpen, reviewOpen, validatingPrices, withTimeout]);
+  }, [priceChangeModalOpen, reviewOpen, withTimeout]);
 
-  // Auto-validate in background every 2 minutes
+  // Auto-validate in background every 2 minutes (analytics only; doesn't toggle UI spinner)
   useEffect(() => {
     if (cartItems.length === 0) return;
     const interval = setInterval(async () => {
@@ -377,7 +387,6 @@ const CartPage: React.FC<CartPageProps> = ({
 
       const currentCartItems = latestCartItemsRef.current;
       if (currentCartItems.length === 0) {
-        // IMPORTANT: avoid getting stuck in "Validating Prices..."
         setValidatingPrices(false);
         return;
       }
@@ -392,7 +401,7 @@ const CartPage: React.FC<CartPageProps> = ({
       }
 
       // Price validation (with timeout protection)
-      const validation = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 15000, 'Price validation timed out');
+      const validation = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 8000, 'Price validation timed out');
       const duration = Date.now() - startTime;
       analytics().trackValidation(duration, validation.hasChanges);
 
@@ -406,7 +415,7 @@ const CartPage: React.FC<CartPageProps> = ({
 
       // Stock warnings (ask user to continue)
       if (validation.stockWarnings.length > 0) {
-        const stockMessages = validation.stockWarnings.map(warning =>
+        const stockMessages = validation.stockWarnings.map((warning: any) =>
           `${warning.itemName}: Only ${warning.availableStock} left (you wanted ${warning.requestedQuantity})`
         ).join('\n');
 
@@ -471,7 +480,8 @@ const CartPage: React.FC<CartPageProps> = ({
     analytics().trackOrderCancellation('price_change');
   };
 
-  // Place order; dispatch result event for OrderReviewModal
+  // Place order: dispatch success immediately on HTTP 200 to avoid UI stall
+  const [placingOrder, setPlacingOrder] = useState(false);
   const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData, cartItems: orderCartItems }: {
     address: any;
     message: string;
@@ -494,11 +504,11 @@ const CartPage: React.FC<CartPageProps> = ({
     const itemsToOrder = orderCartItems || cartItems;
 
     // Prevent placement with unavailable items
-    const unavailableItems = itemsToOrder.filter(item => item.available === false);
+    const unavailableItems = itemsToOrder.filter((item: any) => item.available === false);
     if (unavailableItems.length > 0) {
-      const msg = `Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`;
+      const msg = `Some items are no longer available: ${unavailableItems.map((i: any) => i.name).join(', ')}`;
       alert(msg);
-      unavailableItems.forEach(item => removeFromCart(item.id));
+      unavailableItems.forEach((item: any) => removeFromCart(item.id));
       window.dispatchEvent(new CustomEvent('orderPlacementResult', {
         detail: { success: false, message: msg }
       }));
@@ -511,7 +521,7 @@ const CartPage: React.FC<CartPageProps> = ({
       const payload = {
         userId,
         address,
-        items: itemsToOrder.map(item => ({
+        items: itemsToOrder.map((item: any) => ({
           id: item.id,
           quantity: item.quantity
         })),
@@ -531,27 +541,38 @@ const CartPage: React.FC<CartPageProps> = ({
         body: JSON.stringify(payload)
       });
 
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok) {
-        const details = (data && (data.details || data.errors)) || [];
-        const msgList = Array.isArray(details) ? details.map((e: any) => e?.message || e?.code).filter(Boolean) : [];
-        const errorMsg = data?.error || (msgList.length ? msgList.join('\n') : 'Failed to place order. Please review your cart and try again.');
-        if (onOrderPlaced) onOrderPlaced(false, errorMsg);
+      // Success: notify UI immediately; do not wait for resp.json()
+      if (resp.ok) {
+        if (onOrderPlaced) {
+          onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
+        }
         window.dispatchEvent(new CustomEvent('orderPlacementResult', {
-          detail: { success: false, message: errorMsg }
+          detail: { success: true }
         }));
         setPlacingOrder(false);
         return;
       }
 
-      if (onOrderPlaced) {
-        onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
+      // Handle non-200 errors (best-effort parse)
+      let data: any = {};
+      try {
+        data = await resp.json();
+      } catch (parseError) {
+        console.warn('Failed to parse error response JSON:', parseError);
+        data = { error: 'Server response error' };
       }
+
+      const details = (data.details || data.errors) || [];
+      const msgList = Array.isArray(details) ? details.map((e: any) => e?.message || e?.code).filter(Boolean) : [];
+      const errorMsg = data?.error || (msgList.length ? msgList.join('\n') : 'Failed to place order. Please review your cart and try again.');
+      
+      if (onOrderPlaced) onOrderPlaced(false, errorMsg);
       window.dispatchEvent(new CustomEvent('orderPlacementResult', {
-        detail: { success: true }
+        detail: { success: false, message: errorMsg }
       }));
+
     } catch (err) {
+      console.error('Order placement network error:', err);
       const msg = 'Failed to place order. Please try again.';
       if (onOrderPlaced) onOrderPlaced(false, msg);
       window.dispatchEvent(new CustomEvent('orderPlacementResult', {
