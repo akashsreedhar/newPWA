@@ -1,6 +1,4 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-// ...existing code...
-// Removed direct Firestore writes (db, collection, addDoc, Timestamp)
 import OrderReviewModal from '../components/OrderReviewModal';
 import PriceChangeModal from '../components/PriceChangeModal';
 import { AlertTriangle } from 'lucide-react';
@@ -10,6 +8,7 @@ import { useCart } from '../contexts/CartContext';
 import { validateCartPricesAdvanced } from '../utils/advancedPriceValidation';
 import { PriceValidationAnalytics, PriceValidationErrorTracker } from '../utils/priceValidationAnalytics';
 import { telegramRateLimit } from '../services/TelegramRateLimit';
+import { BACKEND_URL } from '../config';
 
 interface Product {
   id: string;
@@ -71,10 +70,47 @@ const CartPage: React.FC<CartPageProps> = ({
   const [validatingPrices, setValidatingPrices] = useState(false);
   const [validationSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const { t, language, languageDisplay } = useLanguage();
-  // Add revalidateCartAvailability to destructure
-  const { cartItems, updateQuantity, removeFromCart, getCartTotal, getTotalMRP, getTotalSavings, clearCart, validatePrices, updateCartPrices, validatePricesManually, revalidateCartAvailability } = useCart();
 
-  // Enhanced rate limit checking state
+  // NOTE: Added getMaxOrderQuantity and getAllMaxOrderQuantities from CartContext
+  const {
+    cartItems,
+    updateQuantity,
+    removeFromCart,
+    getCartTotal,
+    getTotalMRP,
+    getTotalSavings,
+    clearCart,
+    validatePrices,
+    updateCartPrices,
+    validatePricesManually,
+    revalidateCartAvailability,
+    getMaxOrderQuantity,
+    getAllMaxOrderQuantities
+  } = useCart();
+
+  // Cache for per-product maxOrderQuantity (no re-render needed for updates)
+  const maxQtyRef = useRef<Record<string, number>>({});
+
+  // Prefetch maxOrderQuantity for all items whenever cart changes (batch + cache)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const map = await getAllMaxOrderQuantities();
+        if (!mounted) return;
+        if (map && typeof map === 'object') {
+          maxQtyRef.current = { ...maxQtyRef.current, ...map };
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartItems.length]);
+
   const [rateLimitStatus, setRateLimitStatus] = useState<{
     checking: boolean;
     allowed: boolean;
@@ -287,6 +323,17 @@ const CartPage: React.FC<CartPageProps> = ({
 
   const [placingOrder, setPlacingOrder] = useState(false);
 
+  // Helper: Ensure we have max qty for a product in cache
+  const ensureMaxQtyKnown = useCallback(async (productId: string) => {
+    if (typeof maxQtyRef.current[productId] === 'number') return maxQtyRef.current[productId];
+    const max = await getMaxOrderQuantity(productId);
+    if (typeof max === 'number') {
+      maxQtyRef.current[productId] = max;
+      return max;
+    }
+    return undefined;
+  }, [getMaxOrderQuantity]);
+
   // Handle proceed to checkout with production-grade price validation
   const handleProceedToCheckout = async () => {
     if (!userId || accessError) {
@@ -314,13 +361,33 @@ const CartPage: React.FC<CartPageProps> = ({
         setValidatingPrices(false);
         return;
       } else {
-        // FIX: Don't use exemption token yet, just update UI status
         // The exemption will be used when the order is actually placed
         setRateLimitStatus({ 
           checking: false, 
           allowed: true,
           exemptionReason: rateLimits.exemptionReason 
         });
+      }
+
+      // Enforce maxOrderQuantity before availability/price validations
+      const maxMap = await getAllMaxOrderQuantities();
+      let hadViolations = false;
+      for (const item of latestCartItemsRef.current) {
+        const max = typeof maxMap[item.id] === 'number' ? maxMap[item.id] : undefined;
+        if (typeof max === 'number' && item.quantity > max) {
+          hadViolations = true;
+          const adjusted = Math.max(0, Math.min(item.quantity, max));
+          if (adjusted === 0) {
+            removeFromCart(item.id);
+          } else if (adjusted !== item.quantity) {
+            updateQuantity(item.id, adjusted);
+          }
+        }
+      }
+      if (hadViolations) {
+        alert('We have limited stock for some items. Quantities were adjusted to the maximum allowed.');
+        setValidatingPrices(false);
+        return;
       }
       
       const currentCartItems = latestCartItemsRef.current;
@@ -329,7 +396,6 @@ const CartPage: React.FC<CartPageProps> = ({
       }
 
       // --- AVAILABILITY REVALIDATION PATCH ---
-      // Always revalidate cart items' availability from Firestore before checkout
       const unavailableItems = await revalidateCartAvailability();
       if (unavailableItems.length > 0) {
         alert(`Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`);
@@ -344,10 +410,9 @@ const CartPage: React.FC<CartPageProps> = ({
       
       analytics().trackValidation(duration, validation.hasChanges);
       
-      // PATCH: Remove unavailable items from validated cart before proceeding
+      // Remove unavailable items from validated cart before proceeding
       if (validation.unavailableItems.length > 0) {
         alert(`Some items are no longer available: ${validation.unavailableItems.map(item => item.name).join(', ')}`);
-        // Remove unavailable items from cart
         validation.unavailableItems.forEach(item => removeFromCart(item.id));
         setValidatingPrices(false);
         return;
@@ -365,7 +430,6 @@ const CartPage: React.FC<CartPageProps> = ({
       }
 
       if (validation.hasChanges) {
-        // PATCH: Remove unavailable items from updatedItems before showing modal
         const filteredUpdatedItems = validation.updatedItems.filter((item: any) => item.available !== false);
         setPriceValidationResult({ ...validation, updatedItems: filteredUpdatedItems });
         setPriceChangeModalOpen(true);
@@ -392,7 +456,6 @@ const CartPage: React.FC<CartPageProps> = ({
   // Handle accepting price changes
   const handleAcceptPriceChanges = () => {
     if (priceValidationResult?.updatedItems) {
-      // PATCH: Remove unavailable items from updatedItems before updating cart
       const filteredUpdatedItems = priceValidationResult.updatedItems.filter((item: any) => item.available !== false);
       updateCartPrices(filteredUpdatedItems);
       setPriceValidationResult(null);
@@ -440,7 +503,7 @@ const CartPage: React.FC<CartPageProps> = ({
     // Use order-specific cart items if provided, otherwise use cart context
     const itemsToOrder = orderCartItems || cartItems;
 
-    // PATCH: Block order placement if any item is unavailable
+    // Block order placement if any item is unavailable
     const unavailableItems = itemsToOrder.filter(item => item.available === false);
     if (unavailableItems.length > 0) {
       alert(`Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`);
@@ -460,7 +523,6 @@ const CartPage: React.FC<CartPageProps> = ({
           quantity: item.quantity
         })),
         paymentMethod,
-        // Let backend normalize paymentStatus; pass payment details as meta if any
         paymentMeta: paymentData ? {
           razorpayOrderId: paymentData.razorpayOrderId,
           razorpayPaymentId: paymentData.razorpayPaymentId,
@@ -470,7 +532,7 @@ const CartPage: React.FC<CartPageProps> = ({
         specialInstructions: message?.trim() || null
       };
 
-      const resp = await fetch('https://supermarket-backend-ytrh.onrender.com/place-order-secure', {
+      const resp = await fetch(`${BACKEND_URL}/place-order-secure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -667,7 +729,22 @@ const CartPage: React.FC<CartPageProps> = ({
                 </button>
                 <span className="w-6 sm:w-8 text-center font-medium text-sm">{item.quantity}</span>
                 <button
-                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                  onClick={async () => {
+                    const nextQty = item.quantity + 1;
+                    // Enforce per-product maxOrderQuantity using context helper cache
+                    let max = maxQtyRef.current[item.id];
+                    if (typeof max !== 'number') {
+                      const fetched = await ensureMaxQtyKnown(item.id);
+                      if (typeof fetched === 'number') {
+                        max = fetched;
+                      }
+                    }
+                    if (typeof max === 'number' && nextQty > max) {
+                      alert('We have limited stock for this item.');
+                      return;
+                    }
+                    updateQuantity(item.id, nextQty);
+                  }}
                   className="bg-teal-600 hover:bg-teal-700 text-white w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center transition-colors"
                 >
                   <Plus size={12} className="sm:w-3.5 sm:h-3.5" />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Plus, Minus, Truck } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { useCartAnimation } from '../contexts/CartAnimationContext';
@@ -10,16 +10,16 @@ import ProductCard from './ProductCard';
 interface ProductDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onProductSelect?: (product: any) => void; // Add callback for product selection
+  onProductSelect?: (product: any) => void;
   product: {
     id: string;
     name_en?: string;
     name_ml?: string;
     name_manglish?: string;
     name?: string;
-    price?: number; // Legacy field - optional
-    mrp?: number; // Maximum Retail Price
-    sellingPrice?: number; // Actual selling price
+    price?: number;
+    mrp?: number;
+    sellingPrice?: number;
     imageUrl?: string;
     description?: string;
     category?: string;
@@ -41,15 +41,22 @@ interface ProductDetailModalProps {
   } | null;
 }
 
+// Simple cache to reduce Firestore reads for "similar products"
+const similarByCategoryCache = new Map<string, any[]>();
+
 const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose, onProductSelect, product }) => {
-  const { cartItems, addToCart, updateQuantity } = useCart();
+  const { cartItems, addToCart, updateQuantity, getMaxOrderQuantity } = useCart();
   const { formatProductName } = useProductLanguage();
   const { showAnimation } = useCartAnimation();
+
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [similarProducts, setSimilarProducts] = useState<any[]>([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
   const [currentImageUrl, setCurrentImageUrl] = useState<string>('');
+
+  // Local cached max quantity for the current product to avoid repeated reads
+  const maxQtyRef = useRef<number | null>(null);
 
   // Reset state when modal opens/closes and fetch similar products
   useEffect(() => {
@@ -62,6 +69,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
           setImageLoading(true);
           setCurrentImageUrl(newImageUrl);
         }
+        // Reset local max cache when product changes
+        maxQtyRef.current = null;
         fetchSimilarProducts();
         // Scroll to top when a new product is loaded
         const scrollContainer = document.querySelector('.product-modal-content');
@@ -95,44 +104,43 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
     };
   }, [isOpen, onClose]);
 
-  // Fetch similar products
-  const fetchSimilarProducts = async () => {
-    if (!product) return;
-    
+  // Fetch similar products (same category only, limit 10, with in-memory cache)
+  const fetchSimilarProducts = useCallback(async () => {
+    if (!product || !product.category) {
+      setSimilarProducts([]);
+      return;
+    }
+
     setLoadingSimilar(true);
     try {
-      // First try to get products from the same category
-      let productsQuery = query(
-        collection(db, 'products'),
-        where('category', '==', product.category || ''),
-        limit(6)
-      );
-      
-      let snapshot = await getDocs(productsQuery);
-      let products = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(p => p.id !== product.id); // Exclude current product
-      
-      // If we don't have enough products from the same category, get random products
-      if (products.length < 4) {
-        const allProductsSnapshot = await getDocs(query(collection(db, 'products'), limit(10)));
-        const allProducts = allProductsSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(p => p.id !== product.id);
-        
-        // Shuffle and take the first few
-        const shuffled = allProducts.sort(() => Math.random() - 0.5);
-        products = shuffled.slice(0, 6);
+      // Serve from cache if we have it
+      if (similarByCategoryCache.has(product.category)) {
+        const cached = similarByCategoryCache.get(product.category) || [];
+        // Exclude the current product and slice to 10
+        setSimilarProducts(cached.filter((p: any) => p.id !== product.id).slice(0, 10));
+        setLoadingSimilar(false);
+        return;
       }
-      
-      setSimilarProducts(products.slice(0, 6));
+
+      // Single query: same category, limit 10
+      const productsQuery = query(
+        collection(db, 'products'),
+        where('category', '==', product.category),
+        limit(10)
+      );
+      const snapshot = await getDocs(productsQuery);
+      const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Cache and set (exclude the current product)
+      similarByCategoryCache.set(product.category, products);
+      setSimilarProducts(products.filter(p => p.id !== product.id).slice(0, 10));
     } catch (error) {
       console.error('Error fetching similar products:', error);
       setSimilarProducts([]);
     } finally {
       setLoadingSimilar(false);
     }
-  };
+  }, [product]);
 
   if (!isOpen || !product) return null;
 
@@ -152,40 +160,70 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
   // Check if this is a Fast Food product
   const isFastFood = product.category === "Fast Food";
 
-  const handleAddToCart = () => {
+  const showLimitedStockMessage = () => {
+    alert('We have limited stock for this item.');
+  };
+
+  const ensureMaxKnown = async (): Promise<number | null> => {
+    if (typeof maxQtyRef.current === 'number') return maxQtyRef.current;
+    const max = await getMaxOrderQuantity(product.id);
+    if (typeof max === 'number') {
+      maxQtyRef.current = max;
+      return max;
+    }
+    return null;
+  };
+
+  const handleAddToCart = async () => {
+    // For first add, quantity goes from 0 -> 1; maxOrderQuantity >= 1 is allowed
+    // If a product is out of stock, button is disabled and CartContext double-checks availability
     const productName = formatProductName({
       name: product.name_en || product.name || '',
       malayalamName: product.name_ml || '',
       manglishName: product.name_manglish || ''
     });
-    
-    // Calculate pricing values - use sellingPrice as primary
-    const finalMrp = product.mrp || 0;
-    const finalSellingPrice = product.sellingPrice || 0;
-    const hasOffer = finalMrp > finalSellingPrice;
+
+    // Calculate savings for animation
+    const hasOffer = finalMrp > 0 && finalSellingPrice > 0 && finalMrp > finalSellingPrice;
     const savings = hasOffer ? finalMrp - finalSellingPrice : 0;
-    
+
     showAnimation(productName, savings);
-    
-    addToCart({
+
+    await addToCart({
       id: product.id,
       name: product.name_en || product.name || '',
       malayalamName: product.name_ml || '',
       manglishName: product.name_manglish || '',
-      price: finalSellingPrice, // Use selling price as price for legacy compatibility
+      price: finalSellingPrice,
       mrp: finalMrp,
       sellingPrice: finalSellingPrice,
       unit: 'piece',
       image: product.imageUrl || '',
       imageUrl: product.imageUrl || ''
-    }, false); // Don't trigger the context animation since we're handling it manually
+    }, false);
+  };
+
+  const handleIncrement = async () => {
+    const nextQty = quantity + 1;
+    let max = maxQtyRef.current;
+    if (typeof max !== 'number') {
+      const fetched = await ensureMaxKnown();
+      if (typeof fetched === 'number') max = fetched;
+    }
+    if (typeof max === 'number' && nextQty > max) {
+      showLimitedStockMessage();
+      return;
+    }
+    updateQuantity(product.id, nextQty);
+  };
+
+  const handleDecrement = () => {
+    updateQuantity(product.id, quantity - 1);
   };
 
   const handleSimilarProductClick = (productId: string) => {
-    // Find the product from similar products
     const selectedProduct = similarProducts.find(p => p.id === productId);
     if (selectedProduct && onProductSelect) {
-      // Pass the full product object to parent to update the modal
       onProductSelect(selectedProduct);
     }
   };
@@ -202,7 +240,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
             <X size={20} className="text-gray-600" />
           </button>
           <h2 className="text-lg font-semibold text-gray-900 absolute left-1/2 transform -translate-x-1/2">Product Details</h2>
-          <div className="w-9"></div> {/* Spacer for balance */}
+          <div className="w-9"></div>
         </div>
 
         {/* Scrollable Content */}
@@ -224,53 +262,59 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                 setImageLoading(false);
               }}
             />
+            {product.available === false && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-20">
+                <span className="text-red-600 font-bold text-base sm:text-lg">Out of Stock</span>
+              </div>
+            )}
           </div>
 
           {/* Product Info */}
-          <div className="p-4 space-y-6 pb-24">{/* Added pb-24 for bottom navigation space */}
+          <div className="p-4 space-y-6 pb-24">
             {/* Fast Food Veg/Non-Veg and Spice Level */}
-{isFastFood && (
-  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-    <div className="flex items-center justify-between mb-3">
-      <h3 className="text-sm font-bold text-black flex items-center">
-        🍽️ Fast Food Information
-      </h3>
-      {product.isVeg !== undefined && (
-        <div
-          className={`w-6 h-6 border-2 flex items-center justify-center ${
-            product.isVeg ? 'border-green-600' : 'border-red-600'
-          }`}
-        >
-          <div
-            className={`w-3 h-3 rounded-full ${
-              product.isVeg ? 'bg-green-600' : 'bg-red-600'
-            }`}
-          ></div>
-        </div>
-      )}
-    </div>
-    <div className="grid grid-cols-2 gap-3 text-xs">
-      {product.isVeg !== undefined && (
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-black">Type:</span>
-          <span className={`font-bold text-black`}>
-            {product.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}
-          </span>
-        </div>
-      )}
-      {product.spiceLevel && (
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-black">Spice:</span>
-          <span className="font-bold text-black">
-            {product.spiceLevel === 'mild' && '🌶 Mild'}
-            {product.spiceLevel === 'medium' && '🌶🌶 Medium'}
-            {product.spiceLevel === 'spicy' && '🌶🌶🌶 Spicy'}
-          </span>
-        </div>
-      )}
-    </div>
-  </div>
-)}
+            {isFastFood && (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-black flex items-center">
+                    🍽️ Fast Food Information
+                  </h3>
+                  {product.isVeg !== undefined && (
+                    <div
+                      className={`w-6 h-6 border-2 flex items-center justify-center ${
+                        product.isVeg ? 'border-green-600' : 'border-red-600'
+                      }`}
+                    >
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          product.isVeg ? 'bg-green-600' : 'bg-red-600'
+                        }`}
+                      ></div>
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  {product.isVeg !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-black">Type:</span>
+                      <span className="font-bold text-black">
+                        {product.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}
+                      </span>
+                    </div>
+                  )}
+                  {product.spiceLevel && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-black">Spice:</span>
+                      <span className="font-bold text-black">
+                        {product.spiceLevel === 'mild' && '🌶 Mild'}
+                        {product.spiceLevel === 'medium' && '🌶🌶 Medium'}
+                        {product.spiceLevel === 'spicy' && '🌶🌶🌶 Spicy'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Name and Price */}
             <div>
               <h1 className="text-xl font-semibold text-gray-900 leading-tight">{displayName}</h1>
@@ -295,31 +339,31 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                     <span className="text-2xl font-bold text-green-600">₹{finalSellingPrice || 0}</span>
                   )}
                 </div>
-                
-                {/* Add to Cart Button */}
+
+                {/* Add to Cart / Quantity Controls */}
                 {quantity === 0 ? (
                   <button
                     onClick={handleAddToCart}
-                    disabled={!product.available}
+                    disabled={product.available === false}
                     className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${
-                      product.available 
-                        ? 'bg-green-600 hover:bg-green-700' 
+                      product.available !== false
+                        ? 'bg-green-600 hover:bg-green-700'
                         : 'bg-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {product.available ? 'Add to Cart' : 'Out of Stock'}
+                    {product.available !== false ? 'Add to Cart' : 'Out of Stock'}
                   </button>
                 ) : (
                   <div className="flex items-center space-x-3">
                     <button
-                      onClick={() => updateQuantity(product.id, quantity - 1)}
+                      onClick={handleDecrement}
                       className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center hover:bg-green-200 transition-colors"
                     >
                       <Minus size={16} />
                     </button>
                     <span className="text-lg font-semibold w-8 text-center">{quantity}</span>
                     <button
-                      onClick={() => updateQuantity(product.id, quantity + 1)}
+                      onClick={handleIncrement}
                       className="w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center hover:bg-green-700 transition-colors"
                     >
                       <Plus size={16} />
@@ -358,7 +402,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
               </div>
             )}
 
-            {/* Fast Food Safety Information - Only for Fast Food */}
+            {/* Fast Food Safety Information */}
             {isFastFood && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900 border-b border-yellow-200 pb-2 flex items-center">
@@ -493,7 +537,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                 </div>
               ) : similarProducts.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3">
-                  {similarProducts.map((similarProduct) => (
+                  {similarProducts.slice(0, 10).map((similarProduct) => (
                     <ProductCard
                       key={similarProduct.id}
                       id={similarProduct.id}
@@ -507,6 +551,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                       category={similarProduct.category}
                       isVeg={similarProduct.isVeg}
                       spiceLevel={similarProduct.spiceLevel}
+                      available={similarProduct.available !== false}
                       onProductClick={handleSimilarProductClick}
                     />
                   ))}

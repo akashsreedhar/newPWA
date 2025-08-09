@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 import { validateCartPrices, PriceValidationResult } from '../utils/priceValidation';
 import { doc, getDoc, getDocs, query, where, collection } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -8,14 +8,14 @@ export interface CartItem {
   name: string;
   malayalamName: string;
   manglishName: string;
-  price: number; // Keep for Firebase/legacy compatibility - will equal sellingPrice
-  mrp: number; // Maximum Retail Price
-  sellingPrice: number; // Actual selling price
+  price: number;
+  mrp: number;
+  sellingPrice: number;
   quantity: number;
   unit: string;
   image: string;
-  imageUrl?: string; // Optional, for Firestore compatibility
-  available?: boolean; // <-- Add available property for runtime checks
+  imageUrl?: string;
+  available?: boolean;
 }
 
 export interface Order {
@@ -43,13 +43,14 @@ interface CartContextType {
   updateCartPrices: (updatedItems: CartItem[]) => void;
   validatePricesManually: () => Promise<PriceValidationResult>;
   onCartItemAdded?: (productName: string) => void;
-  revalidateCartAvailability: () => Promise<CartItem[]>; // <-- Add to context
+  revalidateCartAvailability: () => Promise<CartItem[]>;
+  getMaxOrderQuantity: (productId: string) => Promise<number | null>;
+  getAllMaxOrderQuantities: () => Promise<Record<string, number>>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (productName: string) => void }> = ({ children, onCartItemAdded }) => {
-  // Load cart from localStorage if available
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
       const stored = localStorage.getItem("cart");
@@ -70,9 +71,64 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
     }
   });
 
-  // Add price validation state
   const [lastPriceCheck, setLastPriceCheck] = useState<number>(0);
   const [priceValidationInProgress, setPriceValidationInProgress] = useState(false);
+
+  // --- MaxOrderQuantity cache ---
+  const maxOrderQuantityCache = useRef<Map<string, number>>(new Map());
+
+  // Helper: fetch maxOrderQuantity for a single product (with cache)
+  const getMaxOrderQuantity = async (productId: string): Promise<number | null> => {
+    if (maxOrderQuantityCache.current.has(productId)) {
+      return maxOrderQuantityCache.current.get(productId)!;
+    }
+    try {
+      const productDoc = await getDoc(doc(db, 'products', productId));
+      if (productDoc.exists()) {
+        const data = productDoc.data();
+        if (typeof data.maxOrderQuantity === 'number') {
+          maxOrderQuantityCache.current.set(productId, data.maxOrderQuantity);
+          return data.maxOrderQuantity;
+        }
+      }
+    } catch {}
+    return null;
+  };
+
+  // Helper: fetch maxOrderQuantity for all cart items (batch)
+  const getAllMaxOrderQuantities = async (): Promise<Record<string, number>> => {
+    const ids = cartItems.map(item => item.id);
+    const result: Record<string, number> = {};
+    const uncachedIds = ids.filter(id => !maxOrderQuantityCache.current.has(id));
+    if (uncachedIds.length === 0) {
+      ids.forEach(id => {
+        const val = maxOrderQuantityCache.current.get(id);
+        if (typeof val === 'number') result[id] = val;
+      });
+      return result;
+    }
+    // Firestore 'in' queries are limited to 10 items per query
+    const chunkSize = 10;
+    for (let i = 0; i < uncachedIds.length; i += chunkSize) {
+      const chunk = uncachedIds.slice(i, i + chunkSize);
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('__name__', 'in', chunk));
+      const snapshot = await getDocs(q);
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (typeof data.maxOrderQuantity === 'number') {
+          maxOrderQuantityCache.current.set(docSnap.id, data.maxOrderQuantity);
+          result[docSnap.id] = data.maxOrderQuantity;
+        }
+      });
+    }
+    // Add cached values for all ids
+    ids.forEach(id => {
+      const val = maxOrderQuantityCache.current.get(id);
+      if (typeof val === 'number') result[id] = val;
+    });
+    return result;
+  };
 
   // Auto-validate prices every 30 seconds if cart has items
   useEffect(() => {
@@ -84,17 +140,15 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       } catch (error) {
         console.error('Auto price validation failed:', error);
       }
-    }, 30000); // 30 seconds
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [cartItems.length]);
 
-  // Save cart to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cartItems));
   }, [cartItems]);
 
-  // Save orders to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem("orders", JSON.stringify(orders));
   }, [orders]);
@@ -125,7 +179,7 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
           price: item.sellingPrice || 0,
           mrp: item.mrp || 0,
           sellingPrice: item.sellingPrice || 0,
-          available: true // Always set available true if adding
+          available: true
         };
 
         if (showAnimation && onCartItemAdded) {
@@ -279,12 +333,10 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
   };
 
   // --- AVAILABILITY REVALIDATION LOGIC ---
-  // This function checks the latest availability for all cart items from Firestore
   const revalidateCartAvailability = async (): Promise<CartItem[]> => {
     const ids = cartItems.map(item => item.id);
     if (ids.length === 0) return [];
 
-    // Firestore 'in' queries are limited to 10 items per query
     const chunkSize = 10;
     let unavailableItems: CartItem[] = [];
     let updatedCart: CartItem[] = [...cartItems];
@@ -334,7 +386,9 @@ export const CartProvider: React.FC<{ children: ReactNode; onCartItemAdded?: (pr
       updateCartPrices,
       validatePricesManually,
       onCartItemAdded,
-      revalidateCartAvailability // <-- Make available in context
+      revalidateCartAvailability,
+      getMaxOrderQuantity,
+      getAllMaxOrderQuantities
     }}>
       {children}
     </CartContext.Provider>
