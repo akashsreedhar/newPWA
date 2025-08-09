@@ -71,7 +71,6 @@ const CartPage: React.FC<CartPageProps> = ({
   const [validationSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const { t, language, languageDisplay } = useLanguage();
 
-  // NOTE: Added getMaxOrderQuantity and getAllMaxOrderQuantities from CartContext
   const {
     cartItems,
     updateQuantity,
@@ -88,10 +87,28 @@ const CartPage: React.FC<CartPageProps> = ({
     getAllMaxOrderQuantities
   } = useCart();
 
-  // Cache for per-product maxOrderQuantity (no re-render needed for updates)
+  // In-memory cache for per-product max order quantity
   const maxQtyRef = useRef<Record<string, number>>({});
 
-  // Prefetch maxOrderQuantity for all items whenever cart changes (batch + cache)
+  // Helper: wrap a promise with a timeout (production hardening)
+  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 15000, label = 'Validation timed out'): Promise<T> => {
+    let timer: any;
+    return new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(label)), ms);
+      promise.then(
+        (val) => {
+          clearTimeout(timer);
+          resolve(val);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
+  }, []);
+
+  // Prefetch maxOrderQuantity for all items when cart changes (reduces reads in increment handler)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -123,7 +140,7 @@ const CartPage: React.FC<CartPageProps> = ({
     allowed: true
   });
 
-  // PATCH: Remove unavailable items from cart on load
+  // Remove unavailable items from cart automatically
   useEffect(() => {
     const unavailableItems = cartItems.filter(item => item.available === false);
     if (unavailableItems.length > 0) {
@@ -132,31 +149,24 @@ const CartPage: React.FC<CartPageProps> = ({
     // eslint-disable-next-line
   }, [cartItems]);
 
-  // Use ref to track latest cart items for validation
+  // Track latest cart in a ref (prevents stale closures during validations)
   const latestCartItemsRef = useRef(cartItems);
-  
-  // Update ref whenever cartItems change
   useEffect(() => {
     latestCartItemsRef.current = cartItems;
-    // console.log('📦 Cart items updated in CartPage:', cartItems.length, 'items');
   }, [cartItems]);
 
-  // Listen for cart updates from context
+  // Optional: listen for external cart updates from context
   useEffect(() => {
     const handleCartUpdate = (event: CustomEvent) => {
-      // console.log('📦 Cart updated via custom event:', event.detail);
-      // Force update the ref with latest data
       latestCartItemsRef.current = event.detail.updatedItems;
     };
-
     window.addEventListener('cartUpdated', handleCartUpdate as EventListener);
-    
     return () => {
       window.removeEventListener('cartUpdated', handleCartUpdate as EventListener);
     };
   }, []);
 
-  // Listen for modal close event from navigation
+  // Close modal from external navigation events
   useEffect(() => {
     const handler = () => {
       setReviewOpen(false);
@@ -166,26 +176,22 @@ const CartPage: React.FC<CartPageProps> = ({
     return () => window.removeEventListener('closeOrderReviewModal', handler);
   }, [onCloseOrderReview]);
 
-  // Separate trigger for validation after state changes
+  // Manual validation trigger
   const [forceValidationTrigger, setForceValidationTrigger] = useState(0);
-  
-  // Force validation function
   const triggerValidation = useCallback(() => {
     setForceValidationTrigger(prev => prev + 1);
   }, []);
 
-  // Validation effect that responds to manual triggers
+  // Validation effect for manual trigger
   useEffect(() => {
-    if (forceValidationTrigger === 0) return; // Skip initial render
-    
+    if (forceValidationTrigger === 0) return; // skip initial render
     const currentCartItems = latestCartItemsRef.current;
     if (currentCartItems.length === 0) return;
-    
+
     const validate = async () => {
       try {
         setValidatingPrices(true);
-        const result = await validateCartPricesAdvanced(currentCartItems, true);
-        
+        const result = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 15000, 'Price validation timed out');
         if (result.hasChanges && result.priceChanges.length > 0) {
           const convertedResult = {
             isValid: result.isValid,
@@ -201,38 +207,33 @@ const CartPage: React.FC<CartPageProps> = ({
             unavailableItems: result.unavailableItems,
             stockWarnings: result.stockWarnings
           };
-          
           setPriceValidationResult(convertedResult);
           setPriceChangeModalOpen(true);
         } else {
           setPriceValidationResult(null);
         }
       } catch (error) {
-        // console.error('Force validation failed:', error);
+        // no-op; button state reset in finally
       } finally {
         setValidatingPrices(false);
       }
     };
-    
     validate();
-  }, [forceValidationTrigger]);
+  }, [forceValidationTrigger, withTimeout]);
 
   // Initialize analytics
   const analytics = useCallback(() => PriceValidationAnalytics.getInstance(), []);
 
-  // Validate prices on page load and when coming back from modals
+  // Validate on load and when coming back from modals
   useEffect(() => {
     const currentCartItems = latestCartItemsRef.current;
     if (currentCartItems.length === 0) return;
     if (validatingPrices) return;
 
-    const validationKey = `${currentCartItems.length}_${priceChangeModalOpen}_${reviewOpen}`;
-    
     const validateOnLoad = async () => {
       try {
         setValidatingPrices(true);
-        const result = await validateCartPricesAdvanced(currentCartItems, true); // Force fresh
-        
+        const result = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 15000, 'Price validation timed out');
         if (result.hasChanges && result.priceChanges.length > 0) {
           const convertedResult = {
             isValid: result.isValid,
@@ -248,7 +249,6 @@ const CartPage: React.FC<CartPageProps> = ({
             unavailableItems: result.unavailableItems,
             stockWarnings: result.stockWarnings
           };
-          
           setPriceValidationResult(convertedResult);
           if (!priceChangeModalOpen && !reviewOpen) {
             setPriceChangeModalOpen(true);
@@ -257,30 +257,24 @@ const CartPage: React.FC<CartPageProps> = ({
           setPriceValidationResult(null);
         }
       } catch (error) {
-        // console.error('Price validation failed:', error);
+        // no-op; we don't block the UI here
       } finally {
         setValidatingPrices(false);
       }
     };
 
     validateOnLoad();
-  }, [priceChangeModalOpen, reviewOpen]);
+  }, [priceChangeModalOpen, reviewOpen, validatingPrices, withTimeout]);
 
-  // Auto-validate prices periodically (every 2 minutes) when cart is not empty
+  // Auto-validate in background every 2 minutes
   useEffect(() => {
     if (cartItems.length === 0) return;
-
     const interval = setInterval(async () => {
       try {
         const startTime = Date.now();
         const validation = await validateCartPricesAdvanced(cartItems);
         const duration = Date.now() - startTime;
-        
         analytics().trackValidation(duration, validation.hasChanges);
-
-        if (validation.hasChanges && validation.riskLevel !== 'low') {
-          // Silent update for low-risk changes, notification for higher risk
-        }
       } catch (error) {
         PriceValidationErrorTracker.trackError(error as Error, {
           validationType: 'client',
@@ -288,8 +282,7 @@ const CartPage: React.FC<CartPageProps> = ({
           cartItems: cartItems.map(item => ({ id: item.id, name: item.name }))
         });
       }
-    }, 120000); // 2 minutes
-
+    }, 120000);
     return () => clearInterval(interval);
   }, [cartItems, analytics]);
 
@@ -312,18 +305,14 @@ const CartPage: React.FC<CartPageProps> = ({
   };
 
   const getSecondaryName = (item: any) => {
-    if (languageDisplay === 'single') {
-      return null;
-    } else if (languageDisplay === 'english-manglish') {
-      return item.manglishName;
-    } else {
-      return item.malayalamName;
-    }
+    if (languageDisplay === 'single') return null;
+    if (languageDisplay === 'english-manglish') return item.manglishName;
+    return item.malayalamName;
   };
 
   const [placingOrder, setPlacingOrder] = useState(false);
 
-  // Helper: Ensure we have max qty for a product in cache
+  // Ensure we have max qty in cache for an item
   const ensureMaxQtyKnown = useCallback(async (productId: string) => {
     if (typeof maxQtyRef.current[productId] === 'number') return maxQtyRef.current[productId];
     const max = await getMaxOrderQuantity(productId);
@@ -334,22 +323,19 @@ const CartPage: React.FC<CartPageProps> = ({
     return undefined;
   }, [getMaxOrderQuantity]);
 
-  // Handle proceed to checkout with production-grade price validation
+  // Proceed to checkout with validations (rate-limits, stock, prices)
   const handleProceedToCheckout = async () => {
-    if (!userId || accessError) {
-      return;
-    }
+    if (!userId || accessError) return;
 
     setPriceValidationResult(null);
     setValidatingPrices(true);
     setRateLimitStatus({ checking: true, allowed: true });
-    
+
     const startTime = Date.now();
-    
+
     try {
-      // Check rate limits first
+      // Rate limit check first
       const rateLimits = await telegramRateLimit.canPlaceOrder();
-      
       if (!rateLimits.allowed && !rateLimits.exemptionReason) {
         setRateLimitStatus({
           checking: false,
@@ -361,15 +347,14 @@ const CartPage: React.FC<CartPageProps> = ({
         setValidatingPrices(false);
         return;
       } else {
-        // The exemption will be used when the order is actually placed
-        setRateLimitStatus({ 
-          checking: false, 
+        setRateLimitStatus({
+          checking: false,
           allowed: true,
-          exemptionReason: rateLimits.exemptionReason 
+          exemptionReason: rateLimits.exemptionReason
         });
       }
 
-      // Enforce maxOrderQuantity before availability/price validations
+      // Enforce per-product max quantities before moving on
       const maxMap = await getAllMaxOrderQuantities();
       let hadViolations = false;
       for (const item of latestCartItemsRef.current) {
@@ -389,13 +374,15 @@ const CartPage: React.FC<CartPageProps> = ({
         setValidatingPrices(false);
         return;
       }
-      
+
       const currentCartItems = latestCartItemsRef.current;
       if (currentCartItems.length === 0) {
+        // IMPORTANT: avoid getting stuck in "Validating Prices..."
+        setValidatingPrices(false);
         return;
       }
 
-      // --- AVAILABILITY REVALIDATION PATCH ---
+      // Revalidate availability against backend
       const unavailableItems = await revalidateCartAvailability();
       if (unavailableItems.length > 0) {
         alert(`Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`);
@@ -403,14 +390,13 @@ const CartPage: React.FC<CartPageProps> = ({
         setValidatingPrices(false);
         return;
       }
-      // --- END PATCH ---
 
-      const validation = await validateCartPricesAdvanced(currentCartItems, true); // Force fresh data
+      // Price validation (with timeout protection)
+      const validation = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 15000, 'Price validation timed out');
       const duration = Date.now() - startTime;
-      
       analytics().trackValidation(duration, validation.hasChanges);
-      
-      // Remove unavailable items from validated cart before proceeding
+
+      // Remove unavailable items reported by validation
       if (validation.unavailableItems.length > 0) {
         alert(`Some items are no longer available: ${validation.unavailableItems.map(item => item.name).join(', ')}`);
         validation.unavailableItems.forEach(item => removeFromCart(item.id));
@@ -418,17 +404,19 @@ const CartPage: React.FC<CartPageProps> = ({
         return;
       }
 
+      // Stock warnings (ask user to continue)
       if (validation.stockWarnings.length > 0) {
-        const stockMessages = validation.stockWarnings.map(warning => 
+        const stockMessages = validation.stockWarnings.map(warning =>
           `${warning.itemName}: Only ${warning.availableStock} left (you wanted ${warning.requestedQuantity})`
         ).join('\n');
-        
+
         if (!confirm(`Stock limitations detected:\n${stockMessages}\n\nContinue with available quantities?`)) {
           setValidatingPrices(false);
           return;
         }
       }
 
+      // If prices changed, show modal; otherwise open review
       if (validation.hasChanges) {
         const filteredUpdatedItems = validation.updatedItems.filter((item: any) => item.available !== false);
         setPriceValidationResult({ ...validation, updatedItems: filteredUpdatedItems });
@@ -453,7 +441,7 @@ const CartPage: React.FC<CartPageProps> = ({
     }
   };
 
-  // Handle accepting price changes
+  // Accept updated prices
   const handleAcceptPriceChanges = () => {
     if (priceValidationResult?.updatedItems) {
       const filteredUpdatedItems = priceValidationResult.updatedItems.filter((item: any) => item.available !== false);
@@ -470,7 +458,7 @@ const CartPage: React.FC<CartPageProps> = ({
     }
   };
 
-  // Handle rejecting price changes (cancel order)
+  // Reject updated prices (remove changed items)
   const handleRejectPriceChanges = () => {
     const itemsToRemove = priceValidationResult?.priceChanges?.map((change: any) => change.itemId) || [];
     if (itemsToRemove.length > 0) {
@@ -483,10 +471,10 @@ const CartPage: React.FC<CartPageProps> = ({
     analytics().trackOrderCancellation('price_change');
   };
 
-  // Updated handlePlaceOrder to support payment methods
-  const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData, cartItems: orderCartItems }: { 
-    address: any; 
-    message: string; 
+  // Place order; dispatch result event for OrderReviewModal
+  const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData, cartItems: orderCartItems }: {
+    address: any;
+    message: string;
     paymentMethod: 'cod' | 'online';
     paymentData?: any;
     cartItems?: any[];
@@ -497,24 +485,29 @@ const CartPage: React.FC<CartPageProps> = ({
     }
     if (!deliveryAllowed) {
       if (onOrderPlaced) onOrderPlaced(false, 'Delivery not allowed in your area.');
+      window.dispatchEvent(new CustomEvent('orderPlacementResult', {
+        detail: { success: false, message: 'Delivery not allowed in your area.' }
+      }));
       return;
     }
 
-    // Use order-specific cart items if provided, otherwise use cart context
     const itemsToOrder = orderCartItems || cartItems;
 
-    // Block order placement if any item is unavailable
+    // Prevent placement with unavailable items
     const unavailableItems = itemsToOrder.filter(item => item.available === false);
     if (unavailableItems.length > 0) {
-      alert(`Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`);
+      const msg = `Some items are no longer available: ${unavailableItems.map(i => i.name).join(', ')}`;
+      alert(msg);
       unavailableItems.forEach(item => removeFromCart(item.id));
+      window.dispatchEvent(new CustomEvent('orderPlacementResult', {
+        detail: { success: false, message: msg }
+      }));
       return;
     }
 
     setPlacingOrder(true);
 
     try {
-      // Build payload for secure backend placement
       const payload = {
         userId,
         address,
@@ -541,21 +534,29 @@ const CartPage: React.FC<CartPageProps> = ({
       const data = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
-        // Show meaningful backend errors to user
         const details = (data && (data.details || data.errors)) || [];
         const msgList = Array.isArray(details) ? details.map((e: any) => e?.message || e?.code).filter(Boolean) : [];
         const errorMsg = data?.error || (msgList.length ? msgList.join('\n') : 'Failed to place order. Please review your cart and try again.');
         if (onOrderPlaced) onOrderPlaced(false, errorMsg);
+        window.dispatchEvent(new CustomEvent('orderPlacementResult', {
+          detail: { success: false, message: errorMsg }
+        }));
         setPlacingOrder(false);
         return;
       }
 
-      // Success
       if (onOrderPlaced) {
         onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
       }
+      window.dispatchEvent(new CustomEvent('orderPlacementResult', {
+        detail: { success: true }
+      }));
     } catch (err) {
-      if (onOrderPlaced) onOrderPlaced(false, 'Failed to place order. Please try again.');
+      const msg = 'Failed to place order. Please try again.';
+      if (onOrderPlaced) onOrderPlaced(false, msg);
+      window.dispatchEvent(new CustomEvent('orderPlacementResult', {
+        detail: { success: false, message: msg }
+      }));
     } finally {
       setPlacingOrder(false);
     }
@@ -570,7 +571,6 @@ const CartPage: React.FC<CartPageProps> = ({
     }, 100);
   };
 
-  // Time formatting helper function
   const formatTimeRemaining = (seconds: number): string => {
     if (seconds < 60) {
       return `${seconds} second${seconds !== 1 ? 's' : ''}`;
@@ -712,7 +712,6 @@ const CartPage: React.FC<CartPageProps> = ({
                       ₹{item.sellingPrice || item.price} <span className="text-xs sm:text-sm text-gray-500">/{t(item.unit)}</span>
                     </p>
                   )}
-                  {/* PATCH: Show Out of Stock in cart */}
                   {item.available === false && (
                     <span className="text-red-600 text-xs font-semibold ml-2">Out of Stock</span>
                   )}
@@ -731,7 +730,6 @@ const CartPage: React.FC<CartPageProps> = ({
                 <button
                   onClick={async () => {
                     const nextQty = item.quantity + 1;
-                    // Enforce per-product maxOrderQuantity using context helper cache
                     let max = maxQtyRef.current[item.id];
                     if (typeof max !== 'number') {
                       const fetched = await ensureMaxQtyKnown(item.id);
