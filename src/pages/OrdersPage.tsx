@@ -395,7 +395,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
       // 🔴 FIX: Find the order object from state
       const order = orders.find(o => o.id === orderId);
       if (order) {
-await fetch('https://supermarket-backend-ytrh.onrender.com/notify-user-order', {
+await fetch('https://supermarket-bot-8gvg.onrender.com/notify-user-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
