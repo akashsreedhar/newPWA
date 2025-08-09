@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
@@ -51,6 +51,9 @@ const ProductCard: React.FC<ProductCardProps> = ({
   const cartItem = cartItems.find(item => item.id === id);
   const quantity = cartItem?.quantity || 0;
 
+  // Track server-defined per-item limit to avoid repeated reads
+  const [maxOrderQty, setMaxOrderQty] = useState<number | null>(null);
+
   // Calculate pricing values - mrp and sellingPrice are now required
   const finalMrp = mrp || 0;
   const finalSellingPrice = sellingPrice || mrp || 0;
@@ -60,8 +63,32 @@ const ProductCard: React.FC<ProductCardProps> = ({
   // Check if this is a Fast Food product
   const isFastFood = category === "Fast Food";
 
+  const showLimitedStockMessage = () => {
+    alert('We have limited stock for this item.');
+  };
+
+  const fetchProductLimits = async (): Promise<any | null> => {
+    try {
+      const productDoc = await getDoc(doc(db, 'products', id));
+      if (!productDoc.exists()) return null;
+      const data = productDoc.data();
+      if (typeof data.maxOrderQuantity === 'number') {
+        setMaxOrderQty(data.maxOrderQuantity);
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
   // PATCH: Always check latest availability before adding to cart
   const handleAddToCart = async () => {
+    // If already at or beyond max, block
+    if (maxOrderQty !== null && quantity + 1 > maxOrderQty) {
+      showLimitedStockMessage();
+      return;
+    }
+
     // Fetch latest product data from Firestore
     try {
       const productDoc = await getDoc(doc(db, 'products', id));
@@ -70,6 +97,16 @@ const ProductCard: React.FC<ProductCardProps> = ({
         return;
       }
       const productData = productDoc.data();
+
+      // Capture max order limit for subsequent increments
+      if (typeof productData.maxOrderQuantity === 'number') {
+        setMaxOrderQty(productData.maxOrderQuantity);
+        if (quantity + 1 > productData.maxOrderQuantity) {
+          showLimitedStockMessage();
+          return;
+        }
+      }
+
       if (productData.available === false) {
         alert('Sorry, this product is now out of stock.');
         return;
@@ -109,7 +146,26 @@ const ProductCard: React.FC<ProductCardProps> = ({
     }
   };
 
-  const handleUpdateQuantity = (newQuantity: number) => {
+  const handleUpdateQuantity = async (newQuantity: number) => {
+    // If increasing, enforce maxOrderQuantity
+    if (newQuantity > quantity) {
+      let effectiveMax = maxOrderQty;
+
+      // Lazy-load the limit once if not known yet
+      if (effectiveMax === null) {
+        const data = await fetchProductLimits();
+        if (data && typeof data.maxOrderQuantity === 'number') {
+          effectiveMax = data.maxOrderQuantity;
+        }
+      }
+
+      if (typeof effectiveMax === 'number' && newQuantity > effectiveMax) {
+        showLimitedStockMessage();
+        return;
+      }
+    }
+
+    // Normal path
     updateQuantity(id, newQuantity);
   };
 
@@ -205,7 +261,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
             )}
           </div>
 
-          {/* PATCH: Disable Add to Cart if unavailable */}
+          {/* PATCH: Disable Add to Cart if unavailable and enforce maxOrderQuantity */}
           {quantity === 0 ? (
             <button
               onClick={handleAddToCart}
@@ -230,7 +286,22 @@ const ProductCard: React.FC<ProductCardProps> = ({
               </button>
               <span className="w-6 sm:w-8 text-center font-semibold text-teal-700 text-sm sm:text-base">{quantity}</span>
               <button
-                onClick={() => handleUpdateQuantity(quantity + 1)}
+                onClick={async () => {
+                  const nextQty = quantity + 1;
+                  // Enforce limit on click
+                  let effectiveMax = maxOrderQty;
+                  if (effectiveMax === null) {
+                    const data = await fetchProductLimits();
+                    if (data && typeof data.maxOrderQuantity === 'number') {
+                      effectiveMax = data.maxOrderQuantity;
+                    }
+                  }
+                  if (typeof effectiveMax === 'number' && nextQty > effectiveMax) {
+                    showLimitedStockMessage();
+                    return;
+                  }
+                  handleUpdateQuantity(nextQty);
+                }}
                 className="bg-white hover:bg-gray-50 text-teal-600 w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center transition-colors shadow-sm border border-gray-200"
               >
                 <Plus size={14} className="sm:w-4 sm:h-4" />

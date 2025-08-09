@@ -6,6 +6,10 @@
 // API endpoints
 export const BOT_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'https://supermarket-backend-ytrh.onrender.com';
 
+
+export const BACKEND_URL =
+  (import.meta as any)?.env?.VITE_BACKEND_URL ||
+  'https://supermarket-backend-ytrh.onrender.com';
 // WebApp URL (used by bot)
 export const WEBAPP_URL = 'https://new-pwa-hazel.vercel.app/';
 

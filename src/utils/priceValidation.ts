@@ -1,5 +1,6 @@
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { BACKEND_URL } from '../config';
 
 export interface PriceValidationResult {
   isValid: boolean;
@@ -14,8 +15,9 @@ export interface PriceValidationResult {
 }
 
 /**
- * Validates cart items against current Firestore prices
- * Returns updated cart items with current prices and details about any changes
+ * Validates cart items against current backend prices (server-first).
+ * Falls back to Firestore if backend is unavailable.
+ * Always sets 'available' flag for each item.
  */
 export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidationResult> => {
   const priceChanges: {
@@ -26,6 +28,76 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
   }[] = [];
   let hasChanges = false;
 
+  // --- SERVER-FIRST VALIDATION ---
+  try {
+    const resp = await fetch(`${BACKEND_URL}/validate-cart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: cartItems.map(i => ({ id: i.id, quantity: i.quantity }))
+      })
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const serverItems = Array.isArray(data.normalizedItems) ? data.normalizedItems : [];
+
+      const serverMap = new Map<string, any>(
+        serverItems.map((p: any) => [String(p.id), p])
+      );
+
+      const updatedItems = cartItems.map(ci => {
+        const s = serverMap.get(String(ci.id));
+        if (!s) {
+          // Mark missing as unavailable
+          return { ...ci, available: false };
+        }
+        const newPrice = typeof s.sellingPrice === 'number'
+          ? s.sellingPrice
+          : (typeof s.price === 'number' ? s.price : (ci.sellingPrice ?? ci.price));
+
+        return {
+          ...ci,
+          name: s.name ?? ci.name,
+          mrp: typeof s.mrp === 'number' ? s.mrp : (ci.mrp ?? newPrice),
+          sellingPrice: newPrice,
+          price: newPrice,
+          category: s.category ?? ci.category,
+          available: s.available !== false,
+          imageUrl: s.imageUrl ?? ci.imageUrl ?? ci.image,
+          unit: s.unit ?? ci.unit
+        };
+      });
+
+      // Build priceChanges
+      updatedItems.forEach(u => {
+        const prev = cartItems.find(x => x.id === u.id) || {};
+        const oldPrice = (prev as any).sellingPrice ?? (prev as any).price ?? 0;
+        const newPrice = (u as any).sellingPrice ?? (u as any).price ?? 0;
+        if (Number(oldPrice) !== Number(newPrice)) {
+          hasChanges = true;
+          priceChanges.push({
+            itemId: u.id,
+            itemName: u.name || (prev as any).name || 'Item',
+            oldPrice: Number(oldPrice),
+            newPrice: Number(newPrice)
+          });
+        }
+      });
+
+      return {
+        isValid: true,
+        hasChanges,
+        updatedItems,
+        priceChanges
+      };
+    }
+  } catch (e) {
+    // Network/server error → fall through to Firestore fallback
+    // console.warn('Server validation failed, falling back to Firestore:', e);
+  }
+
+  // --- FALLBACK: Firestore-per-item logic ---
   try {
     // Fetch current prices for all cart items in parallel
     const priceChecks = cartItems.map(async (cartItem) => {
@@ -37,7 +109,8 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
           return {
             ...cartItem,
             currentPrice: null,
-            exists: false
+            exists: false,
+            available: false // Mark unavailable
           };
         }
 
@@ -58,7 +131,7 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
         return {
           ...cartItem,
           price: currentPrice, // Update to current price
-          sellingPrice: currentPrice, // CRITICAL: Also update sellingPrice for consistency
+          sellingPrice: currentPrice,
           currentPrice,
           exists: true,
           // Also update other fields that might have changed
@@ -68,10 +141,10 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
           unit: currentData.unit || cartItem.unit,
           image: currentData.imageUrl || currentData.image || cartItem.image,
           imageUrl: currentData.imageUrl || currentData.image || cartItem.imageUrl,
-          netQuantity: currentData.netQuantity || cartItem.netQuantity
+          netQuantity: currentData.netQuantity || cartItem.netQuantity,
+          available: currentData.available !== false // Mark availability
         };
       } catch (error) {
-        console.error(`Error checking price for item ${cartItem.id}:`, error);
         // On error, keep original item but mark as potentially outdated
         return {
           ...cartItem,
@@ -83,10 +156,9 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
     });
 
     const results = await Promise.all(priceChecks);
-    
     // Filter out products that no longer exist
     const existingItems = results.filter(item => item.exists);
-    
+
     return {
       isValid: !hasChanges && existingItems.length === cartItems.length,
       hasChanges,
@@ -95,8 +167,6 @@ export const validateCartPrices = async (cartItems: any[]): Promise<PriceValidat
     };
 
   } catch (error) {
-    console.error('Error validating cart prices:', error);
-    
     // On validation error, return original items but mark as invalid
     return {
       isValid: false,

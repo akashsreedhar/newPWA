@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { db } from '../firebase';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+// ...existing code...
+// Removed direct Firestore writes (db, collection, addDoc, Timestamp)
 import OrderReviewModal from '../components/OrderReviewModal';
 import PriceChangeModal from '../components/PriceChangeModal';
 import { AlertTriangle } from 'lucide-react';
@@ -256,6 +256,7 @@ const CartPage: React.FC<CartPageProps> = ({
 
     return () => clearInterval(interval);
   }, [cartItems, analytics]);
+
   const deliveryCharges = getCartTotal() >= 500 ? 0 : 0;
   const grandTotal = getCartTotal() + deliveryCharges;
 
@@ -448,91 +449,53 @@ const CartPage: React.FC<CartPageProps> = ({
     }
 
     setPlacingOrder(true);
-    
-    // Generate order number first to use with rate limiting
-    const orderNumber = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
-    
-    // Record the order in the rate limiting system
-    try {
-      await telegramRateLimit.recordOrderPlacement(orderNumber);
-    } catch (error) {
-      console.error("Failed to record order in rate limiting system:", error);
-      // Continue with order placement even if this fails
-    }
-    
-    const order = {
-      user: userId,
-      items: itemsToOrder.map(item => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        total: item.price * item.quantity,
-        category: item.category
-      })),
-      total: getCartTotal(),
-      address,
-      specialInstructions: message?.trim() || null,
-      status: 'pending',
-      paymentMethod,
-      ...(paymentMethod === 'online' && paymentData ? {
-        paymentStatus: 'paid',
-        razorpayOrderId: paymentData.razorpayOrderId,
-        razorpayPaymentId: paymentData.razorpayPaymentId,
-        razorpaySignature: paymentData.razorpaySignature,
-        paymentAmount: paymentData.amount,
-        paymentTimestamp: Timestamp.now()
-      } : {
-        paymentStatus: paymentMethod === 'cod' ? 'pending' : 'failed'
-      }),
-      createdAt: Timestamp.now(),
-      notified: false,
-      orderNumber: orderNumber
-    };
-console.log("Creating order with items:", order.items);
-    try {
-      await addDoc(collection(db, 'orders'), order);
-    } catch (err) {
-      setPlacingOrder(false);
-      if (onOrderPlaced) onOrderPlaced(false, 'Failed to place order. Please try again.');
-      return;
-    }
 
     try {
-      await fetch('https://supermarket-backend-ytrh.onrender.com/notify-staff-new-order', {
+      // Build payload for secure backend placement
+      const payload = {
+        userId,
+        address,
+        items: itemsToOrder.map(item => ({
+          id: item.id,
+          quantity: item.quantity
+        })),
+        paymentMethod,
+        // Let backend normalize paymentStatus; pass payment details as meta if any
+        paymentMeta: paymentData ? {
+          razorpayOrderId: paymentData.razorpayOrderId,
+          razorpayPaymentId: paymentData.razorpayPaymentId,
+          razorpaySignature: paymentData.razorpaySignature,
+          amount: paymentData.amount
+        } : undefined,
+        specialInstructions: message?.trim() || null
+      };
+
+      const resp = await fetch('https://supermarket-backend-ytrh.onrender.com/place-order-secure', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.orderNumber,
-          customerName: address?.name || 'Customer',
-          paymentMethod: order.paymentMethod,
-          paymentStatus: order.paymentStatus
-        })
+        body: JSON.stringify(payload)
       });
+
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        // Show meaningful backend errors to user
+        const details = (data && (data.details || data.errors)) || [];
+        const msgList = Array.isArray(details) ? details.map((e: any) => e?.message || e?.code).filter(Boolean) : [];
+        const errorMsg = data?.error || (msgList.length ? msgList.join('\n') : 'Failed to place order. Please review your cart and try again.');
+        if (onOrderPlaced) onOrderPlaced(false, errorMsg);
+        setPlacingOrder(false);
+        return;
+      }
+
+      // Success
+      if (onOrderPlaced) {
+        onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
+      }
     } catch (err) {
-      // Optionally log, but don't block order
-    }
-    
-    try {
-      await fetch('https://supermarket-backend-ytrh.onrender.com/notify-user-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.orderNumber,
-          chatId: userId,
-          items: order.items,
-          total: order.total,
-          status: order.status,
-          paymentMethod: order.paymentMethod,
-          paymentStatus: order.paymentStatus
-        })
-      });
-    } catch (err) {
-      // Optionally log
-    }
-    setPlacingOrder(false);
-    if (onOrderPlaced) {
-      onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
+      if (onOrderPlaced) onOrderPlaced(false, 'Failed to place order. Please try again.');
+    } finally {
+      setPlacingOrder(false);
     }
   };
 

@@ -1,9 +1,9 @@
-import { doc, getDoc, query, where, getDocs, collection } from 'firebase/firestore';
 import { db } from '../firebase';
-
+import { BACKEND_URL } from '../config';
+import { doc, getDoc } from 'firebase/firestore';
 // Price cache to reduce Firebase calls
 const priceCache = new Map<string, { price: number; timestamp: number; ttl: number }>();
-const CACHE_TTL = 15000; // Reduced to 15 seconds for more accurate price validation
+const CACHE_TTL = 60000; // Increased to 60 seconds for fewer reads
 
 export interface EnhancedPriceValidationResult {
   isValid: boolean;
@@ -17,14 +17,14 @@ export interface EnhancedPriceValidationResult {
     percentageChange: number;
   }[];
   unavailableItems: any[];
-  stockWarnings: {
+  stockWarnings?: {
     itemId: string;
     itemName: string;
     requestedQuantity: number;
     availableStock: number;
   }[];
-  validationTimestamp: string;
-  riskLevel: 'low' | 'medium' | 'high';
+  validationTimestamp?: string;
+  riskLevel?: 'low' | 'medium' | 'high';
 }
 
 /**
@@ -54,158 +54,199 @@ export const validateCartPricesAdvanced = async (
   let hasChanges = false;
   let totalPriceImpact = 0;
 
-  console.log(`🔍 Starting advanced validation (forceFresh: ${forceFresh})`);
+  // --- SERVER-FIRST PATH for forceFresh (authoritative) ---
+  if (forceFresh) {
+    try {
+      const resp = await fetch(`${BACKEND_URL}/validate-cart`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cartItems.map(i => ({ id: i.id, quantity: i.quantity }))
+        })
+      });
 
-  try {
-    // Batch fetch for better performance
-    const productIds = cartItems.map(item => item.id);
-    const cachedItems = new Map<string, { price: number; timestamp: number; ttl: number }>();
-    const itemsToFetch: string[] = [];
+      if (resp.ok) {
+        const data = await resp.json();
+        const serverItems = Array.isArray(data.normalizedItems) ? data.normalizedItems : [];
 
-    // Check cache first (unless forcing fresh data)
-    if (!forceFresh) {
-      for (const item of cartItems) {
-        const cached = priceCache.get(item.id);
-        if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
-          cachedItems.set(item.id, cached);
-        } else {
-          itemsToFetch.push(item.id);
-        }
-      }
-    } else {
-      // Force fresh - fetch all items
-      itemsToFetch.push(...productIds);
-      console.log('🔄 Bypassing cache for fresh price validation');
-    }
+        const serverMap = new Map<string, any>(
+          serverItems.map((p: any) => [String(p.id), p])
+        );
 
-    // Batch fetch uncached items
-    let freshData = new Map<string, any>();
-    if (itemsToFetch.length > 0) {
-      // Firebase doesn't support IN queries with more than 10 items, so batch them
-      const batches: string[][] = [];
-      for (let i = 0; i < itemsToFetch.length; i += 10) {
-        batches.push(itemsToFetch.slice(i, i + 10));
-      }
+        for (const ci of cartItems) {
+          const s = serverMap.get(String(ci.id));
+          if (!s) {
+            unavailableItems.push(ci);
+            hasChanges = true;
+            continue;
+          }
 
-      const batchPromises = batches.map(async (batch) => {
-        const q = query(collection(db, 'products'), where('__name__', 'in', batch));
-        const snapshot = await getDocs(q);
-        const batchData = new Map<string, any>();
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          batchData.set(doc.id, data);
-          // Update cache
-          priceCache.set(doc.id, {
-            price: data.sellingPrice,
-            timestamp: Date.now(),
-            ttl: CACHE_TTL
+          const currentPrice = typeof s.sellingPrice === 'number'
+            ? s.sellingPrice
+            : (typeof s.price === 'number' ? s.price : (ci.sellingPrice ?? ci.price));
+
+          const oldPrice = ci.price;
+          if (typeof currentPrice === 'number' && typeof oldPrice === 'number' && Math.abs(currentPrice - oldPrice) > 0.01) {
+            const percentageChange = ((currentPrice - oldPrice) / oldPrice) * 100;
+            priceChanges.push({
+              itemId: ci.id,
+              itemName: s.name || ci.name,
+              oldPrice,
+              newPrice: currentPrice,
+              percentageChange: Math.round(percentageChange * 100) / 100
+            });
+            totalPriceImpact += (currentPrice - oldPrice) * ci.quantity;
+            hasChanges = true;
+          }
+
+          // Optional: stock warnings if server exposes stock or availableStock
+          const availableStock = typeof s.stock === 'number' ? s.stock : (typeof s.availableStock === 'number' ? s.availableStock : undefined);
+          if (typeof availableStock === 'number' && availableStock < ci.quantity) {
+            stockWarnings.push({
+              itemId: ci.id,
+              itemName: s.name || ci.name,
+              requestedQuantity: ci.quantity,
+              availableStock
+            });
+          }
+
+          // update local cache with server price
+          if (typeof currentPrice === 'number') {
+            priceCache.set(ci.id, { price: currentPrice, timestamp: Date.now(), ttl: CACHE_TTL });
+          }
+
+          updatedItems.push({
+            ...ci,
+            price: currentPrice,
+            sellingPrice: currentPrice,
+            name: s.name ?? ci.name,
+            malayalamName: s.name_ml ?? ci.malayalamName,
+            manglishName: s.name_manglish ?? ci.manglishName,
+            imageUrl: s.imageUrl ?? ci.imageUrl,
+            available: s.available !== false,
+            stock: availableStock,
+            lastUpdated: validationTimestamp,
+            category: s.category ?? ci.category
           });
-        });
-        return batchData;
-      });
+        }
 
-      const batchResults = await Promise.all(batchPromises);
-      batchResults.forEach(batchData => {
-        batchData.forEach((value, key) => {
-          freshData.set(key, value);
-        });
-      });
+        const riskLevel = calculateRiskLevel(priceChanges, totalPriceImpact, unavailableItems.length);
+        return {
+          isValid: !hasChanges && unavailableItems.length === 0 && stockWarnings.length === 0,
+          hasChanges,
+          updatedItems,
+          priceChanges,
+          unavailableItems,
+          stockWarnings,
+          validationTimestamp,
+          riskLevel
+        };
+      }
+      // non-OK → fall through to Firestore path
+    } catch (e) {
+      // network/server error → fall through to Firestore path
     }
-
-    // Process each cart item
-    for (const cartItem of cartItems) {
-      let currentData: any;
-
-      // Get data from cache or fresh fetch
-      if (cachedItems.has(cartItem.id)) {
-        currentData = { sellingPrice: cachedItems.get(cartItem.id)!.price };
-      } else {
-        currentData = freshData.get(cartItem.id);
-      }
-
-      if (!currentData) {
-        // Product no longer exists
-        unavailableItems.push(cartItem);
-        hasChanges = true;
-        continue;
-      }
-
-      const currentPrice = currentData.sellingPrice ?? currentData.price; // fallback to legacy field
-      const oldPrice = cartItem.price;
-
-      // Check for price changes
-      if (typeof currentPrice === 'number' && typeof oldPrice === 'number' && Math.abs(currentPrice - oldPrice) > 0.01) {
-        const percentageChange = ((currentPrice - oldPrice) / oldPrice) * 100;
-
-        priceChanges.push({
-          itemId: cartItem.id,
-          itemName: cartItem.name,
-          oldPrice,
-          newPrice: currentPrice,
-          percentageChange: Math.round(percentageChange * 100) / 100
-        });
-
-        totalPriceImpact += (currentPrice - oldPrice) * cartItem.quantity;
-        hasChanges = true;
-      }
-
-      // Check stock availability (if stock field exists)
-      if (
-        typeof currentData.stock === 'number' &&
-        currentData.stock < cartItem.quantity
-      ) {
-        stockWarnings.push({
-          itemId: cartItem.id,
-          itemName: cartItem.name,
-          requestedQuantity: cartItem.quantity,
-          availableStock: currentData.stock
-        });
-      }
-
-      // Update item with fresh data
-      updatedItems.push({
-        ...cartItem,
-        price: currentPrice,
-        sellingPrice: currentPrice, // CRITICAL: Keep both fields in sync
-        name: currentData.name_en || currentData.name || cartItem.name,
-        malayalamName: currentData.name_ml || cartItem.malayalamName,
-        manglishName: currentData.name_manglish || cartItem.manglishName,
-        imageUrl: currentData.imageUrl || cartItem.imageUrl,
-        available: currentData.available !== false, // Default to true if not specified
-        stock: currentData.stock,
-        lastUpdated: validationTimestamp
-      });
-    }
-
-    // Calculate risk level
-    const riskLevel = calculateRiskLevel(priceChanges, totalPriceImpact, unavailableItems.length);
-
-    return {
-      isValid: !hasChanges && unavailableItems.length === 0 && stockWarnings.length === 0,
-      hasChanges,
-      updatedItems,
-      priceChanges,
-      unavailableItems,
-      stockWarnings,
-      validationTimestamp,
-      riskLevel
-    };
-
-  } catch (error) {
-    console.error('Advanced price validation failed:', error);
-
-    // Fallback: return original items but mark as invalid
-    return {
-      isValid: false,
-      hasChanges: false,
-      updatedItems: cartItems,
-      priceChanges: [],
-      unavailableItems: [],
-      stockWarnings: [],
-      validationTimestamp,
-      riskLevel: 'high'
-    };
   }
+
+  // --- existing Firestore/caching path (unchanged) ---
+  // Price cache and batching logic
+  const idsToFetch: string[] = [];
+  const now = Date.now();
+
+  for (const item of cartItems) {
+    const cached = priceCache.get(item.id);
+    if (
+      !cached ||
+      forceFresh ||
+      now - cached.timestamp > (cached.ttl || CACHE_TTL)
+    ) {
+      idsToFetch.push(item.id);
+    }
+  }
+
+  // Firestore 'in' queries are limited to 10 items per query
+  const chunkSize = 10;
+  const fetchedProducts: Record<string, any> = {};
+
+  for (let i = 0; i < idsToFetch.length; i += chunkSize) {
+    const chunk = idsToFetch.slice(i, i + chunkSize);
+    const productDocs = await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          const docRef = doc(db, 'products', id);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            return { id, ...docSnap.data() };
+          }
+        } catch (e) {}
+        return null;
+      })
+    );
+    for (const p of productDocs) {
+      if (p) {
+        fetchedProducts[p.id] = p;
+        priceCache.set(p.id, { price: p.sellingPrice, timestamp: now, ttl: CACHE_TTL });
+      }
+    }
+  }
+
+  for (const ci of cartItems) {
+    const cached = priceCache.get(ci.id);
+    const product = fetchedProducts[ci.id];
+    let currentPrice = ci.sellingPrice ?? ci.price;
+    let available = ci.available !== false;
+
+    if (product) {
+      currentPrice = product.sellingPrice;
+      available = product.available !== false;
+    } else if (cached) {
+      currentPrice = cached.price;
+    }
+
+    if (typeof currentPrice === 'number' && typeof ci.price === 'number' && Math.abs(currentPrice - ci.price) > 0.01) {
+      const percentageChange = ((currentPrice - ci.price) / ci.price) * 100;
+      priceChanges.push({
+        itemId: ci.id,
+        itemName: product?.name || ci.name,
+        oldPrice: ci.price,
+        newPrice: currentPrice,
+        percentageChange: Math.round(percentageChange * 100) / 100
+      });
+      totalPriceImpact += (currentPrice - ci.price) * ci.quantity;
+      hasChanges = true;
+    }
+
+    if (!available) {
+      unavailableItems.push(ci);
+      hasChanges = true;
+    }
+
+    updatedItems.push({
+      ...ci,
+      price: currentPrice,
+      sellingPrice: currentPrice,
+      available,
+      lastUpdated: validationTimestamp,
+      name: product?.name ?? ci.name,
+      malayalamName: product?.name_ml ?? ci.malayalamName,
+      manglishName: product?.name_manglish ?? ci.manglishName,
+      imageUrl: product?.imageUrl ?? ci.imageUrl,
+      category: product?.category ?? ci.category
+    });
+  }
+
+  const riskLevel = calculateRiskLevel(priceChanges, totalPriceImpact, unavailableItems.length);
+
+  return {
+    isValid: !hasChanges && unavailableItems.length === 0 && stockWarnings.length === 0,
+    hasChanges,
+    updatedItems,
+    priceChanges,
+    unavailableItems,
+    stockWarnings,
+    validationTimestamp,
+    riskLevel
+  };
 };
 
 /**
@@ -216,16 +257,11 @@ function calculateRiskLevel(
   totalPriceImpact: number,
   unavailableCount: number
 ): 'low' | 'medium' | 'high' {
-  const significantChanges = priceChanges.filter(change => Math.abs(change.percentageChange) > 5).length;
-  const majorChanges = priceChanges.filter(change => Math.abs(change.percentageChange) > 20).length;
-
-  if (unavailableCount > 0 || majorChanges > 0 || Math.abs(totalPriceImpact) > 100) {
-    return 'high';
-  } else if (significantChanges > 0 || Math.abs(totalPriceImpact) > 20) {
-    return 'medium';
-  } else {
-    return 'low';
-  }
+  if (unavailableCount > 0) return 'high';
+  if (totalPriceImpact > 100 || priceChanges.length > 2) return 'high';
+  if (totalPriceImpact > 30 || priceChanges.length > 1) return 'medium';
+  if (priceChanges.length > 0) return 'low';
+  return 'low';
 }
 
 /**
@@ -239,13 +275,11 @@ export const clearPriceCache = () => {
  * Get cache statistics for monitoring
  */
 export const getCacheStats = () => {
-  return {
-    size: priceCache.size,
-    items: Array.from(priceCache.entries()).map(([id, data]) => ({
-      id,
-      price: data.price,
-      age: Date.now() - data.timestamp,
-      ttl: data.ttl
-    }))
-  };
+  let hits = 0, misses = 0;
+  const now = Date.now();
+  for (const [id, entry] of priceCache.entries()) {
+    if (now - entry.timestamp < (entry.ttl || CACHE_TTL)) hits++;
+    else misses++;
+  }
+  return { hits, misses, size: priceCache.size };
 };

@@ -34,6 +34,7 @@ interface Product {
   storageInstructions?: string;
   isVeg?: boolean;
   spiceLevel?: 'mild' | 'medium' | 'spicy';
+  
 }
 
 interface OrderReviewModalProps {
@@ -147,7 +148,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     return () => {
       try {
         document.body.removeChild(script);
-      } catch (e) {}
+      } catch (e) { }
     };
   }, []);
 
@@ -380,9 +381,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
               const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
               orderIdRef.current = orderId;
-              if (userId) {
-                await telegramRateLimit.recordOrderPlacement(orderId);
-              }
+
               if (onPlaceOrder) {
                 onPlaceOrder({
                   address: selectedAddress,
@@ -605,9 +604,6 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   }
                   const orderId = `ORD${Date.now()}${Math.floor(Math.random() * 1000)}`;
                   orderIdRef.current = orderId;
-                  if (userId) {
-                    await telegramRateLimit.recordOrderPlacement(orderId);
-                  }
                   onPlaceOrder({
                     address: selectedAddress,
                     message,
@@ -897,13 +893,12 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               </div>
               <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white' }}>
                 <button
-                  className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${
-                    disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current
+                  className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current
                       ? 'bg-gray-400 cursor-not-allowed'
                       : step === 'confetti' || step === 'checkmark' || paymentCompleted
-                      ? 'bg-green-500'
-                      : 'bg-teal-600 hover:bg-teal-700'
-                  }`}
+                        ? 'bg-green-500'
+                        : 'bg-teal-600 hover:bg-teal-700'
+                    }`}
                   onClick={handlePlaceOrder}
                   disabled={disableOrderReview || !deliveryAllowed || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || !selectedAddress || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current}
                   style={{ minHeight: 48 }}
