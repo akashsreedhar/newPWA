@@ -1,11 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Clock, CheckCircle, RefreshCw, AlertTriangle, XCircle } from 'lucide-react';
 import { OrderStatusTracker } from '../components/OrderStatusTracker';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useCart } from '../contexts/CartContext';
 import { useAddresses } from '../hooks/useAddresses';
-import { db } from '../firebase.ts';
-import { collection, query, where, orderBy, onSnapshot, getDocs, updateDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  getDocs,
+  getDoc,
+  updateDoc,
+  doc,
+  serverTimestamp,
+  addDoc
+} from 'firebase/firestore';
 import { telegramRateLimit } from '../services/TelegramRateLimit';
 
 interface OrdersPageProps {
@@ -57,52 +69,114 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   const [expanded, setExpanded] = useState<{ [orderId: string]: boolean }>({});
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Cost saver: pause real-time listener when tab is hidden
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const lastSnapshotOrdersRef = useRef<string>(''); // stable hash to avoid redundant setState
+  const terminalProcessedRef = useRef<Set<string>>(new Set()); // de-dupe completion calls
+
+  const buildOrdersHash = (list: OrderData[]) => {
+    try {
+      return JSON.stringify(
+        list.map(o => ({
+          id: o.id,
+          status: o.status,
+          total: o.total,
+          createdAt: o.createdAt?.seconds || 0,
+          itemsCount: o.items?.length || 0
+        }))
+      );
+    } catch {
+      return String(Date.now());
+    }
+  };
+
+  const stopListening = () => {
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+  };
+
+  const startListening = (uid: string) => {
+    if (unsubscribeRef.current) return;
+    setLoading(true);
+    setError(null);
+
+    const q = query(
+      collection(db, 'orders'),
+      where('user', '==', uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    unsubscribeRef.current = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as OrderData[];
+        // Avoid redundant re-renders if data didn't meaningfully change
+        const newHash = buildOrdersHash(fetched);
+        if (newHash !== lastSnapshotOrdersRef.current) {
+          lastSnapshotOrdersRef.current = newHash;
+          setOrders(fetched);
+        }
+        setLoading(false);
+      },
+      () => {
+        setError('Failed to load orders. Please try again.');
+        setLoading(false);
+      }
+    );
+  };
+
+  useEffect(() => {
+    // Reset processed terminal set when user changes
+    terminalProcessedRef.current.clear();
+  }, [userId]);
+
   useEffect(() => {
     if (!userId) {
+      stopListening();
+      setOrders([]);
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError(null);
-    const q = query(
-      collection(db, "orders"),
-      where("user", "==", userId),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(q, (snapshot) => {
-      const fetchedOrders = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data
-        };
-      }) as OrderData[];
-      setOrders(fetchedOrders);
+
+    const uid = String(userId);
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // Pause listener to cut background reads
+        stopListening();
+      } else {
+        // Resume listener when visible
+        stopListening();
+        startListening(uid);
+      }
+    };
+
+    // Start listener only when visible
+    if (!document.hidden) {
+      startListening(uid);
+    } else {
       setLoading(false);
-    }, (err) => {
-      setError('Failed to load orders. Please try again.');
-      setLoading(false);
-    });
-    return () => unsub();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      stopListening();
+    };
   }, [userId]);
 
-  // Monitor order status changes for rate limiting
+  // Monitor order status changes for rate limiting (de-duped to reduce calls)
   useEffect(() => {
-    if (!userId) return;
-    
-    const processOrderStatuses = (orders: OrderData[]) => {
-      orders.forEach(order => {
-        // If order is in a terminal state, update rate limiting
-        if (['delivered', 'completed', 'cancelled'].includes(order.status)) {
-          telegramRateLimit.recordOrderCompletion(order.id);
-        }
-      });
-    };
-    
-    // Process initial order data
-    if (orders.length > 0) {
-      processOrderStatuses(orders);
-    }
+    if (!userId || orders.length === 0) return;
+    orders.forEach(order => {
+      const inTerminal = ['delivered', 'completed', 'cancelled'].includes(order.status);
+      if (inTerminal && !terminalProcessedRef.current.has(order.id)) {
+        terminalProcessedRef.current.add(order.id);
+        telegramRateLimit.recordOrderCompletion(order.id).catch(() => {});
+      }
+    });
   }, [orders, userId]);
 
   const getStatusIcon = (status: string) => {
@@ -184,25 +258,24 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   const handleReorder = async (order: OrderData) => {
     try {
       setReorderingOrderId(order.id);
-      
-      // Check rate limits before allowing reorder
+
+      // Check rate limits before allowing reorder (no Firestore read)
       const canPlaceOrder = await telegramRateLimit.canPlaceOrder();
       if (!canPlaceOrder.allowed) {
         alert(canPlaceOrder.reason || 'Cannot place order at this time. Please try again later.');
         setReorderingOrderId(null);
         return;
       }
-      
-      const cartItems = [];
+
+      const cartItems: any[] = [];
       for (const orderItem of order.items) {
         try {
-          const productQuery = query(
-            collection(db, "products"),
-            where("name", "==", orderItem.name)
-          );
-          const productSnapshot = await getDocs(productQuery);
-          if (!productSnapshot.empty) {
-            const productData = productSnapshot.docs[0].data();
+          // Cost saver: try direct doc fetch by id first (1 read)
+          const prodRef = doc(db, 'products', orderItem.id);
+          const prodSnap = await getDoc(prodRef);
+
+          if (prodSnap.exists()) {
+            const productData = prodSnap.data() as any;
             cartItems.push({
               id: orderItem.id,
               name: orderItem.name,
@@ -217,21 +290,46 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
               sellingPrice: productData.sellingPrice || orderItem.price
             });
           } else {
-            cartItems.push({
-              id: orderItem.id,
-              name: orderItem.name,
-              price: orderItem.price,
-              quantity: orderItem.quantity,
-              malayalamName: '',
-              manglishName: '',
-              unit: 'piece',
-              image: '',
-              imageUrl: '',
-              mrp: orderItem.price,
-              sellingPrice: orderItem.price
-            });
+            // Fallback (rare): name-based query
+            const productQuery = query(
+              collection(db, 'products'),
+              where('name', '==', orderItem.name)
+            );
+            const productSnapshot = await getDocs(productQuery);
+            if (!productSnapshot.empty) {
+              const productData = productSnapshot.docs[0].data() as any;
+              cartItems.push({
+                id: orderItem.id,
+                name: orderItem.name,
+                price: orderItem.price,
+                quantity: orderItem.quantity,
+                malayalamName: productData.malayalamName || '',
+                manglishName: productData.manglishName || '',
+                unit: productData.unit || 'piece',
+                image: productData.image || '',
+                imageUrl: productData.imageUrl || productData.image || '',
+                mrp: productData.mrp || orderItem.price,
+                sellingPrice: productData.sellingPrice || orderItem.price
+              });
+            } else {
+              // Minimal fallback without extra reads
+              cartItems.push({
+                id: orderItem.id,
+                name: orderItem.name,
+                price: orderItem.price,
+                quantity: orderItem.quantity,
+                malayalamName: '',
+                manglishName: '',
+                unit: 'piece',
+                image: '',
+                imageUrl: '',
+                mrp: orderItem.price,
+                sellingPrice: orderItem.price
+              });
+            }
           }
-        } catch (productError) {
+        } catch {
+          // Network/permission fallback: push basic item
           cartItems.push({
             id: orderItem.id,
             name: orderItem.name,
@@ -247,7 +345,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
           });
         }
       }
+
       reorderItems(cartItems);
+
       if (order.address && selectAddress) {
         const adaptedAddress = {
           id: `order_addr_${Date.now()}`,
@@ -259,11 +359,12 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         };
         selectAddress(adaptedAddress);
       }
+
       if (onNavigateToCart) {
         onNavigateToCart();
       }
-    } catch (error) {
-      // Optionally handle error
+    } catch {
+      // no-op
     } finally {
       setReorderingOrderId(null);
     }
@@ -273,7 +374,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   const handleCustomerAction = async (orderId: string, action: 'accept' | 'cancel') => {
     setActionLoading(orderId + action);
     try {
-      const orderRef = doc(db, "orders", orderId);
+      const orderRef = doc(db, 'orders', orderId);
       if (action === 'accept') {
         await updateDoc(orderRef, {
           status: 'accepted',
@@ -288,38 +389,34 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
           cancellationReason: 'Cancelled by customer',
           customerResponseAt: serverTimestamp()
         });
-        
-        // Record order completion for cancelled orders
         if (userId) {
           await telegramRateLimit.recordOrderCompletion(orderId);
         }
       }
 
-      // --- Add orderLogs entry for customer response ---
-      const logRef = collection(db, "orders", orderId, "orderLogs");
+      // Log entry
+      const logRef = collection(db, 'orders', orderId, 'orderLogs');
       await addDoc(logRef, {
         action: 'customer_response',
         response: action === 'accept' ? 'accepted' : 'cancelled',
         timestamp: serverTimestamp()
       });
-
     } catch (err) {
-      console.error("Order update failed:", err);
-      alert("Failed to update order. Please try again.");
+      console.error('Order update failed:', err);
+      alert('Failed to update order. Please try again.');
     } finally {
       setActionLoading(null);
     }
   };
 
-  // New function to handle customer cancellation of pending orders
+  // Customer cancellation of pending orders
   const handleCancelOrder = async (orderId: string) => {
-    if (!confirm("Are you sure you want to cancel this order?")) return;
-    
+    if (!confirm('Are you sure you want to cancel this order?')) return;
+
     setActionLoading(orderId + 'cancel');
     try {
-      const orderRef = doc(db, "orders", orderId);
-      
-      // Update order status
+      const orderRef = doc(db, 'orders', orderId);
+
       await updateDoc(orderRef, {
         status: 'cancelled',
         customerResponse: 'cancelled',
@@ -327,38 +424,32 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         cancellationReason: 'Cancelled by customer',
         customerResponseAt: serverTimestamp()
       });
-      
-      // Add log entry
-      const logRef = collection(db, "orders", orderId, "orderLogs");
+
+      const logRef = collection(db, 'orders', orderId, 'orderLogs');
       await addDoc(logRef, {
         action: 'customer_cancellation',
         response: 'cancelled',
         timestamp: serverTimestamp()
       });
-      
-      // Grant exemption from rate limiting
+
       if (userId) {
         await telegramRateLimit.grantCancellationExemption(orderId);
         await telegramRateLimit.recordOrderCompletion(orderId);
       }
-      
-      // Optional: Show success message
-      alert("Your order has been cancelled successfully. You can place a new order immediately.");
-      
+
+      alert('Your order has been cancelled successfully. You can place a new order immediately.');
     } catch (err) {
-      console.error("Order cancellation failed:", err);
-      alert("Failed to cancel order. Please try again.");
+      console.error('Order cancellation failed:', err);
+      alert('Failed to cancel order. Please try again.');
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Check if an order can be cancelled by the customer
   const canCancel = (order: OrderData) => {
     return ['pending', 'accepted'].includes(order.status);
   };
 
-  // Helper to show out-of-stock details
   const renderOutOfStockDetails = (order: OrderData, showActions: boolean) => {
     const availableItems = order.items.filter(i => !i.outOfStock);
     const outOfStockItems = order.items.filter(i => i.outOfStock);
@@ -446,8 +537,8 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         <div className="p-3 sm:p-4 flex items-center justify-center py-12">
           <div className="text-center">
             <p className="text-red-600 mb-4">{error}</p>
-            <button 
-              onClick={() => window.location.reload()} 
+            <button
+              onClick={() => window.location.reload()}
               className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg"
             >
               Try Again
@@ -472,13 +563,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         ) : (
           <>
             {orders.map(order => {
-              // Special handling for cancelled and pending_customer_action
-              const isActive = order.status !== "delivered";
-              const isPendingCustomerAction = order.status === "pending_customer_action";
-              const isCancelled = order.status === "cancelled";
+              const isActive = order.status !== 'delivered';
+              const isPendingCustomerAction = order.status === 'pending_customer_action';
+              const isCancelled = order.status === 'cancelled';
               const wasOutOfStock = !!order.items.find(i => i.outOfStock);
 
-              // If cancelled or pending_customer_action, show full details
               if (isPendingCustomerAction || isCancelled) {
                 return (
                   <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
@@ -547,11 +636,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
                           <span className="ml-2 text-xs text-gray-500 line-through">₹{order.originalTotal.toFixed(2)}</span>
                         )}
                       </div>
-                      <button 
+                      <button
                         onClick={() => handleReorder(order)}
                         disabled={reorderingOrderId === order.id}
                         className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
-                          reorderingOrderId === order.id 
+                          reorderingOrderId === order.id
                             ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
                             : 'bg-teal-600 hover:bg-teal-700 text-white'
                         }`}
@@ -634,11 +723,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
                             {actionLoading === order.id + 'cancel' ? 'Cancelling...' : 'Cancel Order'}
                           </button>
                         )}
-                        <button 
+                        <button
                           onClick={() => handleReorder(order)}
                           disabled={reorderingOrderId === order.id}
                           className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
-                            reorderingOrderId === order.id 
+                            reorderingOrderId === order.id
                               ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
                               : 'bg-teal-600 hover:bg-teal-700 text-white'
                           }`}
@@ -715,11 +804,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
                           <div>
                             <span className="text-base sm:text-lg font-semibold text-gray-800">₹{order.total.toFixed(2)}</span>
                           </div>
-                          <button 
+                          <button
                             onClick={() => handleReorder(order)}
                             disabled={reorderingOrderId === order.id}
                             className={`px-3 py-2 sm:px-4 sm:py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors flex-shrink-0 ${
-                              reorderingOrderId === order.id 
+                              reorderingOrderId === order.id
                                 ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
                                 : 'bg-teal-600 hover:bg-teal-700 text-white'
                             }`}
