@@ -409,7 +409,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
 
   // Razorpay Payment Handler (uses centralized BACKEND_URL)
   const handleRazorpayPayment = async () => {
-    if (!window.Razorpay) {
+    if (!(window as any).Razorpay) {
       setError('Payment system not loaded. Please refresh and try again.');
       return;
     }
@@ -441,8 +441,8 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
         description: 'Grocery Order Payment',
         order_id: orderData.id,
         prefill: {
-          name: selectedAddress?.label || 'Customer',
-          contact: selectedAddress?.phone || '',
+          name: (selectedAddress as any)?.label || 'Customer',
+          contact: (selectedAddress as any)?.phone || '',
         },
         config: {
           display: {
@@ -691,6 +691,29 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     if (step !== 'idle' && step !== 'payment') {
       orderPlacementRef.current = false;
       return;
+    }
+
+    // Final rate limit re-check to avoid stale state (fast, server-first with timeout)
+    try {
+      setRateLimitStatus(prev => ({ ...prev, checking: true }));
+      const fresh = await telegramRateLimit.canPlaceOrder();
+      setRateLimitStatus({
+        checking: false,
+        allowed: fresh.allowed,
+        reason: fresh.reason,
+        retryAfter: fresh.retryAfter,
+        activeOrders: fresh.activeOrders,
+        exemptionReason: fresh.exemptionReason,
+        cooldownType: fresh.cooldownType
+      });
+      if (!fresh.allowed && !fresh.exemptionReason) {
+        // Block immediately if server says no
+        orderPlacementRef.current = false;
+        return;
+      }
+    } catch (finalCheckErr) {
+      // If re-check fails, keep existing status and proceed (server still enforces on backend)
+      setRateLimitStatus(prev => ({ ...prev, checking: false }));
     }
 
     try {

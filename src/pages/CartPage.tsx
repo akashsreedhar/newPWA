@@ -540,6 +540,15 @@ const CartPage: React.FC<CartPageProps> = ({
 
       // Success: notify UI immediately; do not wait for resp.json()
       if (resp.ok) {
+        // Fire-and-forget: update client-side rate limit record
+        try {
+          resp.clone().json().then(async (data) => {
+            if (data?.id) {
+              try { await telegramRateLimit.recordOrderPlacement(data.id); } catch {}
+            }
+          }).catch(() => {});
+        } catch {}
+
         if (onOrderPlaced) {
           onOrderPlaced(true, paymentMethod === 'cod' ? 'Order placed successfully!' : 'Payment successful! Order placed.');
         }
@@ -703,7 +712,7 @@ const CartPage: React.FC<CartPageProps> = ({
                 src={item.imageUrl || item.image || '/placeholder.png'}
                 alt={item.name}
                 className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0"
-                onError={e => { e.currentTarget.src = '/placeholder.png'; }}
+                onError={e => { (e.currentTarget as HTMLImageElement).src = '/placeholder.png'; }}
               />
               
               <div className="flex-1">
@@ -823,7 +832,7 @@ const CartPage: React.FC<CartPageProps> = ({
           disabled={!userId || !!accessError || authLoading || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)}
         >
           {validatingPrices
-            ? 'Validating Prices...'
+            ? 'Checking for Offers...'
             : rateLimitStatus.checking
             ? 'Checking Limits...'
             : (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)
