@@ -395,7 +395,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
       // 🔴 FIX: Find the order object from state
       const order = orders.find(o => o.id === orderId);
       if (order) {
-await fetch('https://supermarket-bot-8gvg.onrender.com/notify-user-order', {
+await fetch('https://supermarket-backend-ytrh.onrender.com/notify-user-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -432,6 +432,7 @@ await fetch('https://supermarket-bot-8gvg.onrender.com/notify-user-order', {
   };
 
   // Customer cancellation of pending orders
+ // ...existing code...
   const handleCancelOrder = async (orderId: string) => {
     if (!confirm('Are you sure you want to cancel this order?')) return;
 
@@ -447,6 +448,29 @@ await fetch('https://supermarket-bot-8gvg.onrender.com/notify-user-order', {
         customerResponseAt: serverTimestamp()
       });
 
+      // Notify customer via bot (this was missing)
+      const order = orders.find(o => o.id === orderId);
+      if (order && userId) {
+        try {
+          await fetch('https://supermarket-backend-ytrh.onrender.com/notify-user-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId,                      // Firestore doc id; bot resolves orderNumber
+              chatId: String(userId),       // Telegram chat id (your users doc id)
+              items: order.items,
+              total: order.total,
+              status: 'cancelled',
+              paymentMethod: order.paymentMethod,
+              paymentStatus: order.paymentStatus,
+              cancellationReason: 'Cancelled by customer'
+            })
+          });
+        } catch (notifyErr) {
+          console.warn('Failed to notify cancellation:', notifyErr);
+        }
+      }
+
       const logRef = collection(db, 'orders', orderId, 'orderLogs');
       await addDoc(logRef, {
         action: 'customer_cancellation',
@@ -459,7 +483,7 @@ await fetch('https://supermarket-bot-8gvg.onrender.com/notify-user-order', {
         await telegramRateLimit.recordOrderCompletion(orderId);
       }
 
-      alert('Your order has been cancelled successfully. You can place a new order immediately.');
+      alert('Your order has been cancelled successfully.');
     } catch (err) {
       console.error('Order cancellation failed:', err);
       alert('Failed to cancel order. Please try again.');
@@ -467,6 +491,7 @@ await fetch('https://supermarket-bot-8gvg.onrender.com/notify-user-order', {
       setActionLoading(null);
     }
   };
+// ...existing code...
 
   const canCancel = (order: OrderData) => {
     return ['pending', 'accepted'].includes(order.status);
