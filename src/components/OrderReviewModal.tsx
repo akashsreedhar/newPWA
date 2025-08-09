@@ -608,32 +608,42 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
           <div className="flex items-center gap-2">
             <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-            <span className="text-blue-800 text-sm">Checking order limits...</span>
+            <span className="text-blue-800 text-sm"> Hang tight...</span>
           </div>
         </div>
       );
     }
     if (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) {
       return (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="text-red-600 mt-0.5" size={16} />
-            <div>
-              <p className="text-red-700 text-sm font-semibold">Order Limit Reached</p>
-              <p className="text-red-600 text-xs mt-1">{rateLimitStatus.reason}</p>
-              {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
-                <p className="text-red-600 text-xs mt-1">
-                  Try again in: {formatTimeRemaining(rateLimitStatus.retryAfter)}
-                </p>
-              )}
-              {rateLimitStatus.activeOrders && rateLimitStatus.activeOrders > 0 && (
-                <p className="text-blue-600 text-xs mt-1">
-                  You have {rateLimitStatus.activeOrders} active order(s).
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+  <div className="flex items-start gap-2">
+    <AlertTriangle className="text-orange-500 mt-0.5" size={18} />
+    <div>
+      <p className="text-orange-700 text-sm font-semibold mb-1">
+        Order limit reached for now
+      </p>
+      <p className="text-orange-600 text-xs">
+        You’ve reached the maximum number of orders allowed at this time.
+        {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
+          <>
+            <br />
+            <span>
+              Please try again in {formatTimeRemaining(rateLimitStatus.retryAfter)}.
+            </span>
+          </>
+        )}
+        {rateLimitStatus.activeOrders && rateLimitStatus.activeOrders > 0 && (
+          <>
+            <br />
+            <span>
+              You currently have {rateLimitStatus.activeOrders} active order{rateLimitStatus.activeOrders > 1 ? 's' : ''}.
+            </span>
+          </>
+        )}
+      </p>
+    </div>
+  </div>
+</div>
       );
     }
     if (rateLimitStatus.exemptionReason && rateLimitStatus.allowed) {

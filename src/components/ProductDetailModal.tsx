@@ -356,17 +356,24 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                 ) : (
                   <div className="flex items-center space-x-3">
                     <button
+  onClick={handleDecrement}
+  className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center hover:bg-green-200 transition-colors"
+>
+  <Minus size={16} />
+</button>
+<span className="text-lg font-semibold w-8 text-center">{quantity}</span>
+<button
   onClick={handleIncrement}
   disabled={
     (() => {
-      const max = maxQtyRef.current;
+      let max = maxQtyRef.current;
       if (typeof max !== 'number') return false; // Don't disable if unknown
       return quantity >= max;
     })()
   }
   className={
     (() => {
-      const max = maxQtyRef.current;
+      let max = maxQtyRef.current;
       const isDisabled = typeof max === 'number' && quantity >= max;
       return [
         'w-10 h-10 rounded-full flex items-center justify-center transition-colors',

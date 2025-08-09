@@ -671,22 +671,21 @@ const CartPage: React.FC<CartPageProps> = ({
 
       {/* Rate limit warning (only show if no exemption) */}
       {rateLimitStatus.reason && !rateLimitStatus.allowed && !rateLimitStatus.exemptionReason && (
-        <div className="max-w-lg mx-auto mt-4">
-          <div className="flex items-center bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow">
-            <AlertTriangle className="mr-2 flex-shrink-0" />
-            <div>
-              <div className="font-semibold mb-1">Order Limit Reached</div>
-              <div className="text-sm">
-                {rateLimitStatus.reason}
-                {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
-                  <div className="mt-1 text-red-600 font-medium">
-                    Try again in: {formatTimeRemaining(rateLimitStatus.retryAfter)}
-                  </div>
-                )}
-              </div>
-            </div>
+       <div className="max-w-lg mx-auto mt-4">
+  <div className="flex items-center bg-orange-50 border-l-4 border-orange-400 text-orange-800 p-4 rounded-lg shadow">
+    <AlertTriangle className="mr-2 flex-shrink-0 text-orange-500" />
+    <div>
+      <div className="font-semibold mb-1">Order limit reached for now</div>
+      <div className="text-xs">
+        {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
+          <div className="mt-1 text-orange-600 font-medium">
+            Please try again in {formatTimeRemaining(rateLimitStatus.retryAfter)}.
           </div>
-        </div>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
       )}
 
       {/* Cancellation Exemption Notice (only show if exemption is active and allowed) */}
