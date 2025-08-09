@@ -68,7 +68,6 @@ const CartPage: React.FC<CartPageProps> = ({
   const [priceChangeModalOpen, setPriceChangeModalOpen] = useState(false);
   const [priceValidationResult, setPriceValidationResult] = useState<any>(null);
   const [validatingPrices, setValidatingPrices] = useState(false);
-  const [validationSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const { t, language, languageDisplay } = useLanguage();
 
   const {
@@ -79,9 +78,7 @@ const CartPage: React.FC<CartPageProps> = ({
     getTotalMRP,
     getTotalSavings,
     clearCart,
-    validatePrices,
     updateCartPrices,
-    validatePricesManually,
     revalidateCartAvailability,
     getMaxOrderQuantity,
     getAllMaxOrderQuantities
@@ -320,6 +317,7 @@ const CartPage: React.FC<CartPageProps> = ({
     return item.malayalamName;
   };
 
+  // Place-order state (single declaration)
   const [placingOrder, setPlacingOrder] = useState(false);
 
   // Ensure we have max qty in cache for an item
@@ -481,7 +479,6 @@ const CartPage: React.FC<CartPageProps> = ({
   };
 
   // Place order: dispatch success immediately on HTTP 200 to avoid UI stall
-  const [placingOrder, setPlacingOrder] = useState(false);
   const handlePlaceOrder = async ({ address, message, paymentMethod, paymentData, cartItems: orderCartItems }: {
     address: any;
     message: string;
