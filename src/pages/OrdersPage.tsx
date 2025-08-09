@@ -55,6 +55,8 @@ interface OrderData {
   user: string;
   customerResponse?: string;
   cancelledByCustomer?: boolean;
+   paymentMethod?: string;    
+  paymentStatus?: string; 
 }
 
 const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => {
@@ -371,28 +373,48 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
   };
 
   // Accept/Cancel handlers for out-of-stock orders
-  const handleCustomerAction = async (orderId: string, action: 'accept' | 'cancel') => {
-    setActionLoading(orderId + action);
-    try {
-      const orderRef = doc(db, 'orders', orderId);
-      if (action === 'accept') {
-        await updateDoc(orderRef, {
-          status: 'accepted',
-          customerResponse: 'accepted',
-          customerResponseAt: serverTimestamp()
+ const handleCustomerAction = async (orderId: string, action: 'accept' | 'cancel') => {
+  setActionLoading(orderId + action);
+  try {
+    const orderRef = doc(db, 'orders', orderId);
+    if (action === 'accept') {
+      await updateDoc(orderRef, {
+        status: 'accepted',
+        customerResponse: 'accepted',
+        customerResponseAt: serverTimestamp()
+      });
+    } else {
+      await updateDoc(orderRef, {
+        status: 'cancelled',
+        customerResponse: 'cancelled',
+        cancelledByCustomer: true,
+        cancellationReason: 'Cancelled by customer',
+        customerResponseAt: serverTimestamp()
+      });
+
+      // 🔴 FIX: Find the order object from state
+      const order = orders.find(o => o.id === orderId);
+      if (order) {
+        await fetch(`${process.env.REACT_APP_BACKEND_URL}/notify-user-order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            chatId: userId,
+            items: order.items,
+            total: order.total,
+            status: 'cancelled',
+            paymentMethod: order.paymentMethod,
+            paymentStatus: order.paymentStatus,
+            cancellationReason: 'Cancelled by customer'
+          })
         });
-      } else {
-        await updateDoc(orderRef, {
-          status: 'cancelled',
-          customerResponse: 'cancelled',
-          cancelledByCustomer: true,
-          cancellationReason: 'Cancelled by customer',
-          customerResponseAt: serverTimestamp()
-        });
-        if (userId) {
-          await telegramRateLimit.recordOrderCompletion(orderId);
-        }
       }
+      // else: order not found, skip notification
+      if (userId) {
+        await telegramRateLimit.recordOrderCompletion(orderId);
+      }
+    }
 
       // Log entry
       const logRef = collection(db, 'orders', orderId, 'orderLogs');

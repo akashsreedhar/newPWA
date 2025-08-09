@@ -646,21 +646,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
 </div>
       );
     }
-    if (rateLimitStatus.exemptionReason && rateLimitStatus.allowed) {
-      return (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-          <div className="flex items-start gap-2">
-            <div>
-              <p className="text-blue-700 text-sm font-semibold">Order Cancellation Exemption</p>
-              <p className="text-blue-600 text-xs mt-1">
-                Since you recently cancelled an order, you can place a new order immediately.
-                This exemption is one-time only and will be used when you place this order.
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
+    
     return null;
   };
 

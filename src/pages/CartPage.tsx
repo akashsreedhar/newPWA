@@ -688,21 +688,6 @@ const CartPage: React.FC<CartPageProps> = ({
 </div>
       )}
 
-      {/* Cancellation Exemption Notice (only show if exemption is active and allowed) */}
-      {rateLimitStatus.exemptionReason && rateLimitStatus.allowed && (
-        <div className="max-w-lg mx-auto mt-4">
-          <div className="flex items-center bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 rounded-lg shadow">
-            <div>
-              <div className="font-semibold mb-1">Order Cancellation Exemption</div>
-              <div className="text-sm">
-                Since you recently cancelled an order, you can place a new order immediately. 
-                This exemption is one-time only.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
         {cartItems.map(item => (
           <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
