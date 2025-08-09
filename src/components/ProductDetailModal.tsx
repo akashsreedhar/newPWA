@@ -161,7 +161,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
   const isFastFood = product.category === "Fast Food";
 
   const showLimitedStockMessage = () => {
-    alert('We have limited stock for this item.');
+    alert('Sorry, we have limited stock for this item.');
   };
 
   const ensureMaxKnown = async (): Promise<number | null> => {
@@ -356,18 +356,29 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                 ) : (
                   <div className="flex items-center space-x-3">
                     <button
-                      onClick={handleDecrement}
-                      className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center hover:bg-green-200 transition-colors"
-                    >
-                      <Minus size={16} />
-                    </button>
-                    <span className="text-lg font-semibold w-8 text-center">{quantity}</span>
-                    <button
-                      onClick={handleIncrement}
-                      className="w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center hover:bg-green-700 transition-colors"
-                    >
-                      <Plus size={16} />
-                    </button>
+  onClick={handleIncrement}
+  disabled={
+    (() => {
+      const max = maxQtyRef.current;
+      if (typeof max !== 'number') return false; // Don't disable if unknown
+      return quantity >= max;
+    })()
+  }
+  className={
+    (() => {
+      const max = maxQtyRef.current;
+      const isDisabled = typeof max === 'number' && quantity >= max;
+      return [
+        'w-10 h-10 rounded-full flex items-center justify-center transition-colors',
+        isDisabled
+          ? 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+          : 'bg-green-600 text-white hover:bg-green-700'
+      ].join(' ');
+    })()
+  }
+>
+  <Plus size={16} />
+</button>
                   </div>
                 )}
               </div>

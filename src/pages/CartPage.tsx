@@ -754,26 +754,46 @@ const CartPage: React.FC<CartPageProps> = ({
                   <Minus size={12} className="sm:w-3.5 sm:h-3.5" />
                 </button>
                 <span className="w-6 sm:w-8 text-center font-medium text-sm">{item.quantity}</span>
-                <button
-                  onClick={async () => {
-                    const nextQty = item.quantity + 1;
-                    let max = maxQtyRef.current[item.id];
-                    if (typeof max !== 'number') {
-                      const fetched = await ensureMaxQtyKnown(item.id);
-                      if (typeof fetched === 'number') {
-                        max = fetched;
-                      }
-                    }
-                    if (typeof max === 'number' && nextQty > max) {
-                      alert('We have limited stock for this item.');
-                      return;
-                    }
-                    updateQuantity(item.id, nextQty);
-                  }}
-                  className="bg-teal-600 hover:bg-teal-700 text-white w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center transition-colors"
-                >
-                  <Plus size={12} className="sm:w-3.5 sm:h-3.5" />
-                </button>
+              <button
+  onClick={async () => {
+    // Only run if not disabled
+    let max = maxQtyRef.current[item.id];
+    if (typeof max !== 'number') {
+      const fetched = await ensureMaxQtyKnown(item.id);
+      if (typeof fetched === 'number') {
+        max = fetched;
+      }
+    }
+    const nextQty = item.quantity + 1;
+    if (typeof max === 'number' && nextQty > max) {
+      // Should never fire if disabled, but keep as fallback
+      alert('Sorry, we have limited stock for this item.');
+      return;
+    }
+    updateQuantity(item.id, nextQty);
+  }}
+  disabled={
+    (() => {
+      let max = maxQtyRef.current[item.id];
+      if (typeof max !== 'number') return false; // Don't disable if unknown
+      return item.quantity >= max;
+    })()
+  }
+  className={
+    (() => {
+      let max = maxQtyRef.current[item.id];
+      const isDisabled = typeof max === 'number' && item.quantity >= max;
+      return [
+        'w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center transition-colors',
+        isDisabled
+          ? 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+          : 'bg-teal-600 hover:bg-teal-700 text-white'
+      ].join(' ');
+    })()
+  }
+>
+  <Plus size={12} className="sm:w-3.5 sm:h-3.5" />
+</button>
               </div>
 
               <button

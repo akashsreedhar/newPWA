@@ -195,12 +195,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
         <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
           {/* Veg/Non-Veg Symbol */}
           {isVeg !== undefined && (
-            <div className={`w-5 h-5 border-2 flex items-center justify-center ${
-              isVeg ? 'border-green-600' : 'border-red-600'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${
-                isVeg ? 'bg-green-600' : 'bg-red-600'
-              }`}></div>
+            <div className={`w-5 h-5 border-2 flex items-center justify-center ${isVeg ? 'border-green-600' : 'border-red-600'
+              }`}>
+              <div className={`w-2 h-2 rounded-full ${isVeg ? 'bg-green-600' : 'bg-red-600'
+                }`}></div>
             </div>
           )}
           {/* Spice Level Indicator */}
@@ -288,7 +286,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
               <button
                 onClick={async () => {
                   const nextQty = quantity + 1;
-                  // Enforce limit on click
                   let effectiveMax = maxOrderQty;
                   if (effectiveMax === null) {
                     const data = await fetchProductLimits();
@@ -302,7 +299,23 @@ const ProductCard: React.FC<ProductCardProps> = ({
                   }
                   handleUpdateQuantity(nextQty);
                 }}
-                className="bg-white hover:bg-gray-50 text-teal-600 w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center transition-colors shadow-sm border border-gray-200"
+                disabled={
+                  (() => {
+                    if (maxOrderQty === null) return false; // Don't disable if unknown
+                    return quantity >= maxOrderQty;
+                  })()
+                }
+                className={
+                  (() => {
+                    const isDisabled = maxOrderQty !== null && quantity >= maxOrderQty;
+                    return [
+                      'w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center transition-colors shadow-sm border border-gray-200',
+                      isDisabled
+                        ? 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+                        : 'bg-white hover:bg-gray-50 text-teal-600'
+                    ].join(' ');
+                  })()
+                }
               >
                 <Plus size={14} className="sm:w-4 sm:h-4" />
               </button>
