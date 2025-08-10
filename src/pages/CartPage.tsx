@@ -406,16 +406,87 @@ const CartPage: React.FC<CartPageProps> = ({
   };
 
   const normalizeCategory = (c: any) => String(c || '').toLowerCase();
-  const isFastFoodItem = (item: any) => {
+
+  // Local heuristics for fast food (category or FF-specific fields)
+  const localIsFastFood = (item: any) => {
     const c = normalizeCategory(item.category);
-    return c.includes('fast') && c.includes('food');
+    const byCategory = c.includes('fast') && c.includes('food');
+    const byFields =
+      item?.spiceLevel !== undefined ||
+      item?.isVeg !== undefined ||
+      !!item?.fssaiLicenseNumber ||
+      !!item?.ingredients ||
+      !!item?.servingSize ||
+      !!item?.preparationDate ||
+      !!item?.bestBefore ||
+      !!item?.storageInstructions;
+    return byCategory || byFields;
   };
-  const hasFastFood = cartItems.some(isFastFoodItem);
-  const hasGrocery = cartItems.some(item => !isFastFoodItem(item));
+
+  // Enriched Fast Food detection via backend (authoritative) when needed
+  const [ffDetectedIds, setFfDetectedIds] = useState<Set<string>>(new Set());
+  const [ffDetecting, setFfDetecting] = useState(false);
 
   const nowTs = Date.now() + serverTimeOffsetMs;
   const storeOpen = !!operatingStatus?.store?.open;
   const kitchenOpen = !!operatingStatus?.fast_food?.open;
+
+  useEffect(() => {
+    let cancelled = false;
+    const detect = async () => {
+      // Reset when not needed
+      if (!cartItems.length || !storeOpen || kitchenOpen) {
+        if (!cancelled) {
+          setFfDetectedIds(new Set());
+          setFfDetecting(false);
+        }
+        return;
+      }
+      // If local heuristics already find any FF items, use them
+      const localIds = cartItems.filter(localIsFastFood).map((i: any) => i.id);
+      if (localIds.length > 0) {
+        if (!cancelled) {
+          setFfDetectedIds(new Set(localIds));
+          setFfDetecting(false);
+        }
+        return;
+      }
+      // Otherwise, probe backend once for normalized categories
+      try {
+        setFfDetecting(true);
+        const resp = await fetch(`${BACKEND_URL}/validate-cart`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: cartItems.map((i: any) => ({ id: i.id, quantity: i.quantity })) })
+        });
+        if (!resp.ok) throw new Error('validate-cart failed');
+        const data = await resp.json();
+        const list = Array.isArray(data?.normalizedItems) ? data.normalizedItems
+          : Array.isArray(data?.items) ? data.items : [];
+        const ids = list
+          .filter((p: any) => {
+            const c = normalizeCategory(p?.category);
+            return c.includes('fast') && c.includes('food');
+          })
+          .map((p: any) => String(p.id));
+        if (!cancelled) {
+          setFfDetectedIds(new Set(ids));
+        }
+      } catch {
+        // Ignore errors; backend will still block at placement time
+      } finally {
+        if (!cancelled) setFfDetecting(false);
+      }
+    };
+    detect();
+    return () => { cancelled = true; };
+    // Only re-run when cart changes or kitchen/store state changes
+  }, [cartItems, storeOpen, kitchenOpen]);
+
+  // Final fast food predicate (includes backend-enriched IDs)
+  const isFastFoodItem = (item: any) => localIsFastFood(item) || ffDetectedIds.has(item.id);
+  const hasFastFood = cartItems.some(isFastFoodItem);
+  const hasGrocery = cartItems.some(item => !isFastFoodItem(item));
 
   const storeWindow = (() => {
     const s = operatingStatus?.store || {};
@@ -472,7 +543,7 @@ const CartPage: React.FC<CartPageProps> = ({
 
     // Case 2: Store open, kitchen closed and cart has fast food
     if (storeOpen && !kitchenOpen && hasFastFood) {
-      const title = hasGrocery ? 'Kitchen opening soon' : 'Kitchen opening soon';
+      const title = 'Kitchen opening soon';
       const subtitle = ffOpenStr ? `Come back at ${ffOpenStr}` : 'Please check back soon';
       const countdownMs = nextKitchenTs ? Math.max(0, nextKitchenTs - nowTs) : null;
       return {
