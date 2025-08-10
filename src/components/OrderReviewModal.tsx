@@ -360,15 +360,11 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   };
 
   // COD: place order immediately; animate while waiting
-  const startImmediatePlacementCOD = useCallback(async () => {
+const startImmediatePlacementCOD = useCallback(async () => {
     startProgressToNinety();
 
     try {
-      // Use exemption token before placing order if available (non-blocking if fails)
-      if (rateLimitStatus.exemptionReason) {
-        try { await telegramRateLimit.useExemptionToken(); } catch (e) { console.error('Exemption token failed:', e); }
-      }
-
+      // Let the backend atomically consume any exemption token during placement
       const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
       waitingForBackendRef.current = true;
 
@@ -490,11 +486,6 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               setPaymentCompleted(true);
               setProcessingPayment(false);
               setVerifyingPayment(false);
-
-              // Use exemption token before placing order if available (non-blocking if fails)
-              if (rateLimitStatus.exemptionReason) {
-                try { await telegramRateLimit.useExemptionToken(); } catch (e) { console.error('Exemption token failed:', e); }
-              }
 
               const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
               waitingForBackendRef.current = true;

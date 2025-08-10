@@ -383,6 +383,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ userId, onNavigateToCart }) => 
         customerResponse: 'accepted',
         customerResponseAt: serverTimestamp()
       });
+    // ...existing code...
     } else {
       await updateDoc(orderRef, {
         status: 'cancelled',
@@ -410,8 +411,9 @@ await fetch('https://supermarket-backend-ytrh.onrender.com/notify-user-order', {
           })
         });
       }
-      // else: order not found, skip notification
+      // Grant exemption here too (matches handleCancelOrder behavior)
       if (userId) {
+        await telegramRateLimit.grantCancellationExemption(orderId);
         await telegramRateLimit.recordOrderCompletion(orderId);
       }
     }

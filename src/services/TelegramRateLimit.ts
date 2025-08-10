@@ -250,8 +250,8 @@ export class TelegramRateLimit {
       }
 
       // Serve from cache for snappy UX
-      const now = Date.now();
-      if (this.cache.serverRateLimit && this.cache.serverCacheUntil && this.cache.serverCacheUntil > now) {
+      const nowCached = Date.now();
+      if (this.cache.serverRateLimit && this.cache.serverCacheUntil && this.cache.serverCacheUntil > nowCached) {
         return this.cache.serverRateLimit;
       }
 
@@ -279,9 +279,18 @@ export class TelegramRateLimit {
           // Learn config from server (prevents drift during fallback)
           this.updateLearnedConfigFromServer(result);
 
-          // Cache server result for a short time
+          // If server blocks due to post-exemption cooldown, cache it locally for UX + fewer calls
+          if (result.allowed === false && result.cooldownType === 'post_exemption' && typeof result.retryAfter === 'number' && result.retryAfter > 0) {
+            const history = await this.getOrderHistory();
+            const expiresAt = Date.now() + result.retryAfter * 1000;
+            history.postExemptionCooldown = { expiresAt };
+            await this.saveOrderHistory(history);
+          }
+
+          // Cache server result for a short time (timestamp at cache time)
+          const nowStore = Date.now();
           this.cache.serverRateLimit = result;
-          this.cache.serverCacheUntil = now + (RATE_LIMIT_CONFIG.SERVER_CACHE_TTL_SECONDS * 1000);
+          this.cache.serverCacheUntil = nowStore + (RATE_LIMIT_CONFIG.SERVER_CACHE_TTL_SECONDS * 1000);
 
           console.log('✅ Server rate limit check:', result);
 
@@ -429,6 +438,7 @@ export class TelegramRateLimit {
 
   /**
    * Get order history from storage (with caching)
+   * - Prunes expired exemption token and post-exemption cooldown for clean UX
    */
   private async getOrderHistory(): Promise<OrderHistory> {
     const now = Date.now();
@@ -456,18 +466,36 @@ export class TelegramRateLimit {
           if (data) {
             const parsed = JSON.parse(data) as OrderHistory;
 
+            let changed = false;
+
             if (parsed.lastResetDate !== today) {
               parsed.dailyOrderCount = 0;
               parsed.lastResetDate = today;
-              await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(parsed));
+              changed = true;
+            }
+
+            // Prune expired exemption and cooldown
+            const nowTs = Date.now();
+            if (parsed.cancelExemptionToken && parsed.cancelExemptionToken.expiresAt <= nowTs) {
+              delete parsed.cancelExemptionToken;
+              changed = true;
+            }
+            if (parsed.postExemptionCooldown && parsed.postExemptionCooldown.expiresAt <= nowTs) {
+              delete parsed.postExemptionCooldown;
+              changed = true;
             }
 
             const deviceId = this.getOrCreateDeviceFingerprint();
             if (!parsed.deviceIds) {
               parsed.deviceIds = [deviceId];
+              changed = true;
             } else if (!parsed.deviceIds.includes(deviceId)) {
               parsed.deviceIds.push(deviceId);
               if (parsed.deviceIds.length > 5) parsed.deviceIds = parsed.deviceIds.slice(-5);
+              changed = true;
+            }
+
+            if (changed) {
               await this.telegramCloudStorage.setItem(storageKey, JSON.stringify(parsed));
             }
 
@@ -489,19 +517,36 @@ export class TelegramRateLimit {
       if (localData) {
         try {
           const parsed = JSON.parse(localData) as OrderHistory;
+          let changed = false;
 
           if (parsed.lastResetDate !== today) {
             parsed.dailyOrderCount = 0;
             parsed.lastResetDate = today;
-            localStorage.setItem(storageKey, JSON.stringify(parsed));
+            changed = true;
+          }
+
+          // Prune expired exemption and cooldown
+          const nowTs = Date.now();
+          if (parsed.cancelExemptionToken && parsed.cancelExemptionToken.expiresAt <= nowTs) {
+            delete parsed.cancelExemptionToken;
+            changed = true;
+          }
+          if (parsed.postExemptionCooldown && parsed.postExemptionCooldown.expiresAt <= nowTs) {
+            delete parsed.postExemptionCooldown;
+            changed = true;
           }
 
           const deviceId = this.getOrCreateDeviceFingerprint();
           if (!parsed.deviceIds) {
             parsed.deviceIds = [deviceId];
+            changed = true;
           } else if (!parsed.deviceIds.includes(deviceId)) {
             parsed.deviceIds.push(deviceId);
             if (parsed.deviceIds.length > 5) parsed.deviceIds = parsed.deviceIds.slice(-5);
+            changed = true;
+          }
+
+          if (changed && typeof localStorage !== 'undefined') {
             localStorage.setItem(storageKey, JSON.stringify(parsed));
           }
 
