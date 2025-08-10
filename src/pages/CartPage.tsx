@@ -619,7 +619,7 @@ const CartPage: React.FC<CartPageProps> = ({
                     <div className="mt-2">
                       <button
                         onClick={removeFastFoodItems}
-                        className="text-xs font-semibold px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 border border-white/30 transition-colors"
+                        className="text-xs font-semibold px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 border border-white/30 transition-colors text-black"
                         type="button"
                       >
                         Remove Fast Food items & continue
