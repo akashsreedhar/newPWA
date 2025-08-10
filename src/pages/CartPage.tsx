@@ -605,7 +605,7 @@ const CartPage: React.FC<CartPageProps> = ({
                   <div
                     className={
                       'text-base sm:text-lg font-extrabold tracking-wide drop-shadow-sm' +
-                      (isClosedToday ? ' text-red-400' : '')
+                      (isClosedToday ? ' text-black' : '')
                     }
                   >
                     {hoursBlock.title}
