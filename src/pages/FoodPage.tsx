@@ -232,49 +232,135 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
 
+  // Premium closed-hours banner (Fast Food page)
   function renderFastFoodHoursBanner() {
     if (!operatingStatus) return null;
+
     const store = operatingStatus.store || {};
     const ff = operatingStatus.fast_food || {};
     const cfg = operatingStatus.config || {};
+
+    const storeWindow = (store.window && (store.window.open || store.window.close))
+      ? store.window
+      : (cfg.store || FALLBACK_OPERATING_HOURS.store);
+
     const ffWindow = (ff.window && (ff.window.open || ff.window.close))
       ? ff.window
       : (cfg.services?.fast_food || FALLBACK_OPERATING_HOURS.services.fast_food);
 
-    const ffOpenStr = formatHHMMTo12h(ffWindow?.open);
-    const ffCloseStr = formatHHMMTo12h(ffWindow?.close);
-
-    const isOpen = !!ff.open;
     const nowTs = Date.now() + serverTimeOffsetMs;
+    const storeOpen = !!store.open;
+    const ffOpen = !!ff.open;
 
+    // 1) If store is open and fast food is open => no banner
+    if (storeOpen && ffOpen) return null;
+
+    // Decide which schedule to reference and what message to show
     let title = '';
-    let body = '';
-    if (isOpen) {
-      title = 'Fast Food is open';
-      body = `Today ${ffOpenStr} – ${ffCloseStr}`;
-    } else {
-      const nextTs = typeof ff.nextOpenTs === 'number' ? ff.nextOpenTs : null;
-      const remainingMs = nextTs ? Math.max(0, nextTs - nowTs) : null;
-      const isTomorrow = remainingMs !== null && remainingMs > 6 * 60 * 60 * 1000;
-      title = isTomorrow ? 'Fast Food closed for today' : 'Fast Food is closed';
-      body = remainingMs !== null && !isTomorrow
-        ? `Opens in ${formatDuration(remainingMs)}`
-        : `Opens ${isTomorrow ? 'tomorrow' : 'at'} ${ffOpenStr}`;
+    let subtitle = '';
+    let nextTs: number | null = null;
+    let openStr = '';
+
+    if (!storeOpen) {
+      // 2) Store is closed
+      nextTs = typeof store.nextOpenTs === 'number' ? store.nextOpenTs : null;
+      openStr = formatHHMMTo12h(storeWindow?.open);
+      const isSameDayNextOpen = nextTs ? (new Date(nowTs).toDateString() === new Date(nextTs).toDateString()) : false;
+
+      if (nextTs) {
+        if (isSameDayNextOpen) {
+          // After midnight, waiting to open today
+          title = 'Opening soon';
+          subtitle = openStr ? `Come back at ${openStr}` : 'Please check back soon';
+        } else {
+          // Before midnight and closed for the day
+          title = 'Closed for today';
+          subtitle = openStr ? `Opens tomorrow at ${openStr}` : 'Please check back tomorrow';
+        }
+      } else {
+        title = 'Closed now';
+        subtitle = openStr ? `Opens at ${openStr}` : 'Please check back later';
+      }
+    } else if (!ffOpen) {
+      // 3) Store is open but fast food service not started yet
+      nextTs = typeof ff.nextOpenTs === 'number' ? ff.nextOpenTs : null;
+      openStr = formatHHMMTo12h(ffWindow?.open);
+      title = 'Kitchen opening soon';
+      subtitle = openStr ? `Come back at ${openStr}` : 'Please check back soon';
     }
 
-    const bg = isOpen ? 'bg-green-100 border-green-500 text-green-800' : 'bg-red-100 border-red-500 text-red-800';
+    const remainingMs = nextTs ? Math.max(0, nextTs - nowTs) : null;
+    const countdown = remainingMs !== null ? formatDuration(remainingMs) : '';
 
+    // Premium animated gradient banner (left: title/subtitle, right: live countdown)
     return (
       <div className="px-4 mt-3">
-        <div className={`flex flex-col sm:flex-row sm:items-center ${bg} border-l-4 p-4 rounded-lg shadow`}>
-          <div className="flex-shrink-0 text-2xl sm:mr-3">{isOpen ? '🟢' : '🔴'}</div>
-          <div className="flex-1">
-            <div className="font-semibold">{title}</div>
-            <div className="text-sm">{body}</div>
-            <div className="text-xs mt-1 opacity-80">
-              Store hours may apply.
+        <div className="relative overflow-hidden rounded-2xl shadow-lg">
+          {/* Animated gradient background */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(135deg, #0ea5e9 0%, #22c55e 50%, #f59e0b 100%)',
+              filter: 'saturate(110%) brightness(1.05)'
+            }}
+          />
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{
+              background:
+                'radial-gradient(1200px 400px at -10% 0%, rgba(255,255,255,0.35), transparent), radial-gradient(800px 300px at 110% 100%, rgba(255,255,255,0.25), transparent)'
+            }}
+          />
+          {/* Glow border */}
+          <div
+            className="absolute inset-0 rounded-2xl pointer-events-none"
+            style={{ boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)' }}
+          />
+          {/* Floating accents */}
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-2xl animate-[op_float_8s_ease-in-out_infinite]" />
+          <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-white/10 rounded-full blur-3xl animate-[op_float_10s_ease-in-out_infinite]" />
+
+          {/* Content row */}
+          <div className="relative z-10 flex items-center justify-between p-4 sm:p-5 text-white">
+            {/* Left: message */}
+            <div className="flex items-start">
+              <div className="mr-3 text-2xl sm:text-3xl leading-none">⏳</div>
+              <div>
+                <div className="text-base sm:text-lg font-extrabold tracking-wide drop-shadow-sm">
+                  {title}
+                </div>
+                <div className="text-xs sm:text-sm font-medium opacity-95">
+                  {subtitle}
+                </div>
+              </div>
+            </div>
+            {/* Right: countdown */}
+            <div className="flex items-center">
+              <div className="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-sm border border-white/25 shadow-md">
+                <div className="text-[10px] sm:text-xs uppercase tracking-wider opacity-90 font-semibold text-white/90">
+                  Opens in
+                </div>
+                <div className="font-mono text-lg sm:text-2xl font-bold leading-tight tracking-wider animate-[op_shimmer_3s_linear_infinite]">
+                  {countdown || '--:--'}
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* Local keyframes */}
+          <style>
+            {`
+              @keyframes op_float {
+                0%, 100% { transform: translateY(0px); opacity: 0.7; }
+                50% { transform: translateY(-12px); opacity: 1; }
+              }
+              @keyframes op_shimmer {
+                0% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+                50% { filter: drop-shadow(0 0 8px rgba(255,255,255,0.35)); }
+                100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+              }
+            `}
+          </style>
         </div>
       </div>
     );
