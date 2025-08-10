@@ -640,57 +640,106 @@ const AppInner: React.FC = () => {
       ? store.window
       : (cfg.store || FALLBACK_OPERATING_HOURS.store);
 
+    // Friendly time strings
     const openStr = formatHHMMTo12h(storeWindow?.open);
-    const closeStr = formatHHMMTo12h(storeWindow?.close);
-    const ffWindow = (cfg.services && cfg.services.fast_food) ? cfg.services.fast_food : FALLBACK_OPERATING_HOURS.services.fast_food;
-    const ffOpenStr = formatHHMMTo12h(ffWindow?.open);
-    const ffCloseStr = formatHHMMTo12h(ffWindow?.close);
 
     const nowTs = Date.now() + serverTimeOffsetMs;
-    let messageTitle = '';
-    let messageBody = '';
-    let isOpen = !!store.open;
-    let accentColor = isOpen ? 'green' : 'red';
-    let subNote = `Fast Food: ${ffOpenStr} – ${ffCloseStr}`;
+    const isOpen = !!store.open;
 
-    if (isOpen) {
-      // Open banner
-      const endHint = closeStr ? `until ${closeStr}` : 'now';
-      messageTitle = 'We’re open';
-      messageBody = `Order now • Open ${endHint}`;
-    } else {
-      // Closed banner with countdown or next-day hint
-      const nextTs = typeof store.nextOpenTs === 'number' ? store.nextOpenTs : null;
-      const remainingMs = nextTs ? Math.max(0, nextTs - nowTs) : null;
+    // Show no banner when open
+    if (isOpen) return null;
 
-      // If remaining > 6 hours, assume next opening is tomorrow (typical 9AM next day)
-      const isTomorrow = remainingMs !== null && remainingMs > 6 * 60 * 60 * 1000;
+    const nextTs = typeof store.nextOpenTs === 'number' ? store.nextOpenTs : null;
+    const remainingMs = nextTs ? Math.max(0, nextTs - nowTs) : null;
 
-      messageTitle = isTomorrow ? 'Closed for today' : 'Closed now';
-      if (remainingMs !== null && remainingMs >= 0 && !isTomorrow) {
-        messageBody = `Opens in ${formatDuration(remainingMs)}`;
+    // Decide whether next opening is today (after midnight) or tomorrow
+    const isSameDayNextOpen = nextTs
+      ? (new Date(nowTs).toDateString() === new Date(nextTs).toDateString())
+      : false;
+
+    let title = '';
+    let subtitle = '';
+
+    if (nextTs) {
+      if (isSameDayNextOpen) {
+        // After midnight, waiting for today’s opening
+        title = 'Opening soon';
+        subtitle = openStr ? `Come back at ${openStr}` : 'Please check back soon';
       } else {
-        // Fallback to clear time window
-        messageBody = storeWindow?.open
-          ? `Opens ${isTomorrow ? 'tomorrow' : ''} at ${openStr}`
-          : 'Please check back later';
+        // Before midnight and shop already closed for today
+        title = 'Closed for today';
+        subtitle = openStr ? `Opens tomorrow at ${openStr}` : 'Please check back tomorrow';
       }
+    } else {
+      // Fallback if backend didn’t provide nextOpenTs
+      title = 'Closed now';
+      subtitle = openStr ? `Opens at ${openStr}` : 'Please check back later';
     }
 
-    // Visual style aligns with existing banners
-    const bg = isOpen ? 'bg-green-100 border-green-500 text-green-800' : 'bg-red-100 border-red-500 text-red-800';
+    const countdown = remainingMs !== null ? formatDuration(remainingMs) : '';
 
     return (
       <div className="max-w-lg mx-auto mt-4">
-        <div className={`flex flex-col sm:flex-row sm:items-center ${bg} border-l-4 p-4 rounded-lg shadow`}>
-          <div className="flex-shrink-0 text-2xl sm:mr-3">{isOpen ? '🟢' : '🔴'}</div>
-          <div className="flex-1">
-            <div className="font-semibold">{messageTitle}</div>
-            <div className="text-sm">{messageBody}</div>
-            <div className="text-xs mt-1 opacity-80">
-              Today’s hours: {openStr} – {closeStr} • {subNote}
+        <div className="relative overflow-hidden rounded-2xl shadow-lg">
+          {/* Premium animated gradient background */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(135deg, #0ea5e9 0%, #22c55e 50%, #f59e0b 100%)',
+              filter: 'saturate(110%) brightness(1.05)'
+            }}
+          />
+          <div className="absolute inset-0 opacity-20"
+               style={{ background: 'radial-gradient(1200px 400px at -10% 0%, rgba(255,255,255,0.35), transparent), radial-gradient(800px 300px at 110% 100%, rgba(255,255,255,0.25), transparent)' }} />
+          {/* Soft glow border */}
+          <div className="absolute inset-0 rounded-2xl pointer-events-none"
+               style={{ boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)' }} />
+          {/* Animated accents */}
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-2xl animate-[op_float_8s_ease-in-out_infinite]" />
+          <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-white/10 rounded-full blur-3xl animate-[op_float_10s_ease-in-out_infinite]" />
+          
+          {/* Content */}
+          <div className="relative z-10 flex items-center justify-between p-4 sm:p-5 text-white">
+            {/* Left: title + subtitle */}
+            <div className="flex items-start">
+              <div className="mr-3 text-2xl sm:text-3xl leading-none">⏳</div>
+              <div>
+                <div className="text-base sm:text-lg font-extrabold tracking-wide drop-shadow-sm">
+                  {title}
+                </div>
+                <div className="text-xs sm:text-sm font-medium opacity-95">
+                  {subtitle}
+                </div>
+              </div>
+            </div>
+
+            {/* Right: live countdown */}
+            <div className="flex items-center">
+              <div className="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-sm border border-white/25 shadow-md">
+                <div className="text-[10px] sm:text-xs uppercase tracking-wider opacity-90 font-semibold text-white/90">
+                  Opens in
+                </div>
+                <div className="font-mono text-lg sm:text-2xl font-bold leading-tight tracking-wider animate-[op_shimmer_3s_linear_infinite]">
+                  {countdown || '--:--'}
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* Local keyframes (scoped by unique names) */}
+          <style>
+            {`
+              @keyframes op_float {
+                0%, 100% { transform: translateY(0px); opacity: 0.7; }
+                50% { transform: translateY(-12px); opacity: 1; }
+              }
+              @keyframes op_shimmer {
+                0% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+                50% { filter: drop-shadow(0 0 8px rgba(255,255,255,0.35)); }
+                100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+              }
+            `}
+          </style>
         </div>
       </div>
     );

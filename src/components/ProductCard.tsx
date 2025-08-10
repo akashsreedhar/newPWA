@@ -82,68 +82,20 @@ const ProductCard: React.FC<ProductCardProps> = ({
     }
   };
 
-  // ---- Operating-hours helpers (no style changes, only behavior guard) ----
-  const parseHHMM = (hhmm?: string) => {
-    if (!hhmm) return null;
-    const [h, m] = hhmm.split(':').map(n => parseInt(n, 10));
-    if (isNaN(h) || isNaN(m)) return null;
-    return h * 60 + m;
-  };
+  // Use the product language hook to get display name
+  const displayName = formatProductName({
+    name,
+    malayalamName,
+    manglishName
+  });
 
-  const isNowInWindow = (open?: string, close?: string) => {
-    const openMin = parseHHMM(open);
-    const closeMin = parseHHMM(close);
-    if (openMin === null || closeMin === null) return true; // if not configured, do not block
-    const now = new Date();
-    const nowMin = now.getHours() * 60 + now.getMinutes();
-    if (openMin <= closeMin) {
-      // same-day window
-      return nowMin >= openMin && nowMin < closeMin;
-    }
-    // overnight window, e.g., 22:00 - 02:00
-    return nowMin >= openMin || nowMin < closeMin;
-  };
+  // Use imageUrl from Firestore, fallback to image prop, then to a placeholder
+  const imgSrc = imageUrl || image || 'https://via.placeholder.com/300x300?text=No+Image';
 
-  const to12h = (hhmm?: string) => {
-    if (!hhmm) return '';
-    const [hStr, mStr] = hhmm.split(':');
-    const h = parseInt(hStr, 10);
-    const m = parseInt(mStr, 10);
-    if (isNaN(h) || isNaN(m)) return hhmm;
-    const isPM = h >= 12;
-    const hr = ((h + 11) % 12) + 1;
-    const mm = m.toString().padStart(2, '0');
-    return `${hr}:${mm} ${isPM ? 'PM' : 'AM'}`;
-  };
+  // --- REMOVED: All business hour checks from add-to-cart and increment logic ---
 
-  const storeWin = FALLBACK_OPERATING_HOURS?.store || { open: undefined, close: undefined };
-  const ffWin = FALLBACK_OPERATING_HOURS?.services?.fast_food || { open: undefined, close: undefined };
-  const storeOpenNow = isNowInWindow(storeWin.open as any, storeWin.close as any);
-  const ffOpenNow = isNowInWindow(ffWin.open as any, ffWin.close as any);
-  const canOrderNow = isFastFood ? (storeOpenNow && ffOpenNow) : storeOpenNow;
-
-  const closedTooltip =
-    canOrderNow
-      ? undefined
-      : (isFastFood
-          ? `Fast Food available: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}`
-          : `Ordering available: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}`);
-
-  // PATCH: Always check latest availability and hours before adding to cart
+  // PATCH: Always check latest availability before adding to cart
   const handleAddToCart = async () => {
-    // Guard by operating hours (do not change styles; just block action)
-    const nowStoreOpen = isNowInWindow(storeWin.open as any, storeWin.close as any);
-    const nowFfOpen = isNowInWindow(ffWin.open as any, ffWin.close as any);
-    const allowedNow = isFastFood ? (nowStoreOpen && nowFfOpen) : nowStoreOpen;
-    if (!allowedNow) {
-      alert(
-        isFastFood
-          ? `Fast Food service is closed now.\nAvailable: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}.`
-          : `Ordering is closed now.\nStore hours: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}.`
-      );
-      return;
-    }
-
     // If already at or beyond max, block
     if (maxOrderQty !== null && quantity + 1 > maxOrderQty) {
       showLimitedStockMessage();
@@ -208,20 +160,8 @@ const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const handleUpdateQuantity = async (newQuantity: number) => {
-    // If increasing, enforce maxOrderQuantity and operating hours
+    // If increasing, enforce maxOrderQuantity
     if (newQuantity > quantity) {
-      const nowStoreOpen = isNowInWindow(storeWin.open as any, storeWin.close as any);
-      const nowFfOpen = isNowInWindow(ffWin.open as any, ffWin.close as any);
-      const allowedNow = isFastFood ? (nowStoreOpen && nowFfOpen) : nowStoreOpen;
-      if (!allowedNow) {
-        alert(
-          isFastFood
-            ? `Fast Food service is closed now.\nAvailable: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}.`
-            : `Ordering is closed now.\nStore hours: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}.`
-        );
-        return;
-      }
-
       let effectiveMax = maxOrderQty;
 
       // Lazy-load the limit once if not known yet
@@ -241,16 +181,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
     // Normal path
     updateQuantity(id, newQuantity);
   };
-
-  // Use the product language hook to get display name
-  const displayName = formatProductName({
-    name,
-    malayalamName,
-    manglishName
-  });
-
-  // Use imageUrl from Firestore, fallback to image prop, then to a placeholder
-  const imgSrc = imageUrl || image || 'https://via.placeholder.com/300x300?text=No+Image';
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow w-full h-full flex flex-col min-h-[270px] max-h-[340px] relative">
@@ -343,7 +273,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
             )}
           </div>
 
-          {/* Keep styles unchanged; intercept clicks when outside hours. */}
+          {/* Add to Cart / Quantity Controls */}
           {quantity === 0 ? (
             <button
               onClick={handleAddToCart}
@@ -352,7 +282,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
               `}
               disabled={!available}
               aria-disabled={!available}
-              title={closedTooltip}
             >
               <Plus size={16} className="sm:w-4 sm:h-4" />
               <span className="font-medium text-xs sm:text-sm">
@@ -370,19 +299,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
               <span className="w-6 sm:w-8 text-center font-semibold text-teal-700 text-sm sm:text-base">{quantity}</span>
               <button
                 onClick={async () => {
-                  // Intercept outside operating hours for increment only (decrement allowed anytime)
-                  const nowStoreOpen = isNowInWindow(storeWin.open as any, storeWin.close as any);
-                  const nowFfOpen = isNowInWindow(ffWin.open as any, ffWin.close as any);
-                  const allowedNow = isFastFood ? (nowStoreOpen && nowFfOpen) : nowStoreOpen;
-                  if (!allowedNow) {
-                    alert(
-                      isFastFood
-                        ? `Fast Food service is closed now.\nAvailable: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}.`
-                        : `Ordering is closed now.\nStore hours: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}.`
-                    );
-                    return;
-                  }
-
                   const nextQty = quantity + 1;
                   let effectiveMax = maxOrderQty;
                   if (effectiveMax === null) {
@@ -414,7 +330,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
                     ].join(' ');
                   })()
                 }
-                title={closedTooltip}
               >
                 <Plus size={14} className="sm:w-4 sm:h-4" />
               </button>
