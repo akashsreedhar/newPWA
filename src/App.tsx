@@ -22,6 +22,12 @@ import { useAuth } from './hooks/useAuth.ts';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import logo from './images/Logo.png';
+import {
+  USE_BACKEND_OPERATING_HOURS,
+  OPERATING_HOURS_ENDPOINT,
+  OPERATING_HOURS_POLL_MS,
+  FALLBACK_OPERATING_HOURS
+} from './config';
 
 // --- Device Fingerprint Helper ---
 function getDeviceFingerprint() {
@@ -541,6 +547,155 @@ const AppInner: React.FC = () => {
     };
   }, [navigationStack.length, currentPage]);
 
+  // --- Operating hours status (Home banner only) ---
+  const [operatingStatus, setOperatingStatus] = useState<any | null>(null);
+  const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
+  const [opTick, setOpTick] = useState(0);
+
+  // Fetch status on mount and poll
+  useEffect(() => {
+    let mounted = true;
+    let pollId: any = null;
+
+    const applyFallback = () => {
+      const fb = FALLBACK_OPERATING_HOURS;
+      // Minimal synthetic status for fallback (assume open to avoid blocking UI)
+      const status = {
+        timezone: fb.timezone,
+        serverTimeTs: Date.now(),
+        store: { open: true, nextOpenTs: null, closeTs: null, countdownSeconds: 0, window: fb.store },
+        fast_food: { open: true, nextOpenTs: null, closeTs: null, countdownSeconds: 0, window: fb.services.fast_food },
+        config: { store: fb.store, services: { fast_food: fb.services.fast_food }, overrides: {} }
+      };
+      if (mounted) {
+        setOperatingStatus(status);
+        setServerTimeOffsetMs(0);
+      }
+    };
+
+    const fetchStatus = async () => {
+      if (!USE_BACKEND_OPERATING_HOURS) {
+        applyFallback();
+        return;
+      }
+      try {
+        const res = await fetch(OPERATING_HOURS_ENDPOINT, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!mounted) return;
+        const now = Date.now();
+        const offset = typeof data.serverTimeTs === 'number' ? (data.serverTimeTs - now) : 0;
+        setOperatingStatus(data);
+        setServerTimeOffsetMs(offset);
+      } catch {
+        applyFallback();
+      }
+    };
+
+    fetchStatus();
+    pollId = setInterval(fetchStatus, OPERATING_HOURS_POLL_MS);
+
+    return () => {
+      mounted = false;
+      if (pollId) clearInterval(pollId);
+    };
+  }, []);
+
+  // Lightweight 1s ticker for countdown display only (no extra server calls)
+  useEffect(() => {
+    const id = setInterval(() => setOpTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  function formatHHMMTo12h(hhmm?: string) {
+    if (!hhmm || typeof hhmm !== 'string') return '';
+    const [hStr, mStr] = hhmm.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return hhmm;
+    const isPM = h >= 12;
+    const hr = ((h + 11) % 12) + 1;
+    const mm = m.toString().padStart(2, '0');
+    return `${hr}:${mm} ${isPM ? 'PM' : 'AM'}`;
+  }
+
+  function formatDuration(ms: number) {
+    if (ms < 0) ms = 0;
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function renderOperatingHoursBanner() {
+    if (!operatingStatus || currentPage !== 'home') return null;
+
+    const store = operatingStatus.store || {};
+    const cfg = operatingStatus.config || {};
+    const storeWindow = (store.window && (store.window.open || store.window.close))
+      ? store.window
+      : (cfg.store || FALLBACK_OPERATING_HOURS.store);
+
+    const openStr = formatHHMMTo12h(storeWindow?.open);
+    const closeStr = formatHHMMTo12h(storeWindow?.close);
+    const ffWindow = (cfg.services && cfg.services.fast_food) ? cfg.services.fast_food : FALLBACK_OPERATING_HOURS.services.fast_food;
+    const ffOpenStr = formatHHMMTo12h(ffWindow?.open);
+    const ffCloseStr = formatHHMMTo12h(ffWindow?.close);
+
+    const nowTs = Date.now() + serverTimeOffsetMs;
+    let messageTitle = '';
+    let messageBody = '';
+    let isOpen = !!store.open;
+    let accentColor = isOpen ? 'green' : 'red';
+    let subNote = `Fast Food: ${ffOpenStr} – ${ffCloseStr}`;
+
+    if (isOpen) {
+      // Open banner
+      const endHint = closeStr ? `until ${closeStr}` : 'now';
+      messageTitle = 'We’re open';
+      messageBody = `Order now • Open ${endHint}`;
+    } else {
+      // Closed banner with countdown or next-day hint
+      const nextTs = typeof store.nextOpenTs === 'number' ? store.nextOpenTs : null;
+      const remainingMs = nextTs ? Math.max(0, nextTs - nowTs) : null;
+
+      // If remaining > 6 hours, assume next opening is tomorrow (typical 9AM next day)
+      const isTomorrow = remainingMs !== null && remainingMs > 6 * 60 * 60 * 1000;
+
+      messageTitle = isTomorrow ? 'Closed for today' : 'Closed now';
+      if (remainingMs !== null && remainingMs >= 0 && !isTomorrow) {
+        messageBody = `Opens in ${formatDuration(remainingMs)}`;
+      } else {
+        // Fallback to clear time window
+        messageBody = storeWindow?.open
+          ? `Opens ${isTomorrow ? 'tomorrow' : ''} at ${openStr}`
+          : 'Please check back later';
+      }
+    }
+
+    // Visual style aligns with existing banners
+    const bg = isOpen ? 'bg-green-100 border-green-500 text-green-800' : 'bg-red-100 border-red-500 text-red-800';
+
+    return (
+      <div className="max-w-lg mx-auto mt-4">
+        <div className={`flex flex-col sm:flex-row sm:items-center ${bg} border-l-4 p-4 rounded-lg shadow`}>
+          <div className="flex-shrink-0 text-2xl sm:mr-3">{isOpen ? '🟢' : '🔴'}</div>
+          <div className="flex-1">
+            <div className="font-semibold">{messageTitle}</div>
+            <div className="text-sm">{messageBody}</div>
+            <div className="text-xs mt-1 opacity-80">
+              Today’s hours: {openStr} – {closeStr} • {subNote}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // --- UI rendering ---
   if (tgAccessError) {
     return (
@@ -743,6 +898,9 @@ const AppInner: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Store operating hours banner (Home only) */}
+      {renderOperatingHoursBanner()}
 
       {/* Order placement feedback */}
       {orderSuccess && (

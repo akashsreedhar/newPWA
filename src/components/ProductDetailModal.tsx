@@ -6,6 +6,7 @@ import { useProductLanguage } from '../hooks/useProductLanguage';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, limit } from 'firebase/firestore';
 import ProductCard from './ProductCard';
+import { FALLBACK_OPERATING_HOURS } from '../config';
 
 interface ProductDetailModalProps {
   isOpen: boolean;
@@ -158,7 +159,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
   const finalSellingPrice = product.sellingPrice || 0;
 
   // Check if this is a Fast Food product
-  const isFastFood = product.category === "Fast Food";
+  const isFastFood = product.category === 'Fast Food';
 
   const showLimitedStockMessage = () => {
     alert('Sorry, we have limited stock for this item.');
@@ -174,7 +175,67 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
     return null;
   };
 
+  // --- Operating-hours helpers (no style changes, only behavior guard) ---
+  const parseHHMM = (hhmm?: string) => {
+    if (!hhmm) return null;
+    const [h, m] = hhmm.split(':').map(n => parseInt(n, 10));
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  const isNowInWindow = (open?: string, close?: string) => {
+    const openMin = parseHHMM(open);
+    const closeMin = parseHHMM(close);
+    if (openMin === null || closeMin === null) return true; // if not configured, do not block
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (openMin <= closeMin) {
+      // same-day window
+      return nowMin >= openMin && nowMin < closeMin;
+    }
+    // overnight window, e.g., 22:00 - 02:00
+    return nowMin >= openMin || nowMin < closeMin;
+  };
+
+  const to12h = (hhmm?: string) => {
+    if (!hhmm) return '';
+    const [hStr, mStr] = hhmm.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return hhmm;
+    const isPM = h >= 12;
+    const hr = ((h + 11) % 12) + 1;
+    const mm = m.toString().padStart(2, '0');
+    return `${hr}:${mm} ${isPM ? 'PM' : 'AM'}`;
+  };
+
+  const storeWin = FALLBACK_OPERATING_HOURS?.store || { open: undefined as any, close: undefined as any };
+  const ffWin = FALLBACK_OPERATING_HOURS?.services?.fast_food || { open: undefined as any, close: undefined as any };
+  const storeOpenNow = isNowInWindow(storeWin.open as any, storeWin.close as any);
+  const ffOpenNow = isNowInWindow(ffWin.open as any, ffWin.close as any);
+  const canOrderNow = isFastFood ? (storeOpenNow && ffOpenNow) : storeOpenNow;
+
+  const closedTooltip =
+    canOrderNow
+      ? undefined
+      : (isFastFood
+          ? `Fast Food available: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}`
+          : `Ordering available: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}`);
+
   const handleAddToCart = async () => {
+    // Respect business hours without changing styles: just block with a message
+    const nowStoreOpen = isNowInWindow(storeWin.open as any, storeWin.close as any);
+    const nowFfOpen = isNowInWindow(ffWin.open as any, ffWin.close as any);
+    const allowedNow = isFastFood ? (nowStoreOpen && nowFfOpen) : nowStoreOpen;
+    if (!allowedNow) {
+      alert(
+        isFastFood
+          ? `Fast Food service is closed now.\nAvailable: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}.`
+          : `Ordering is closed now.\nStore hours: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}.`
+      );
+      return;
+    }
+
     // For first add, quantity goes from 0 -> 1; maxOrderQuantity >= 1 is allowed
     // If a product is out of stock, button is disabled and CartContext double-checks availability
     const productName = formatProductName({
@@ -199,11 +260,25 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
       sellingPrice: finalSellingPrice,
       unit: 'piece',
       image: product.imageUrl || '',
-      imageUrl: product.imageUrl || ''
+      imageUrl: product.imageUrl || '',
+      available: product.available !== false
     }, false);
   };
 
   const handleIncrement = async () => {
+    // Respect business hours for increment (decrement allowed anytime)
+    const nowStoreOpen = isNowInWindow(storeWin.open as any, storeWin.close as any);
+    const nowFfOpen = isNowInWindow(ffWin.open as any, ffWin.close as any);
+    const allowedNow = isFastFood ? (nowStoreOpen && nowFfOpen) : nowStoreOpen;
+    if (!allowedNow) {
+      alert(
+        isFastFood
+          ? `Fast Food service is closed now.\nAvailable: ${to12h(ffWin.open as any)} – ${to12h(ffWin.close as any)}.`
+          : `Ordering is closed now.\nStore hours: ${to12h(storeWin.open as any)} – ${to12h(storeWin.close as any)}.`
+      );
+      return;
+    }
+
     const nextQty = quantity + 1;
     let max = maxQtyRef.current;
     if (typeof max !== 'number') {
@@ -350,42 +425,44 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
                         ? 'bg-green-600 hover:bg-green-700'
                         : 'bg-gray-400 cursor-not-allowed'
                     }`}
+                    title={closedTooltip}
                   >
                     {product.available !== false ? 'Add to Cart' : 'Out of Stock'}
                   </button>
                 ) : (
                   <div className="flex items-center space-x-3">
                     <button
-  onClick={handleDecrement}
-  className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center hover:bg-green-200 transition-colors"
->
-  <Minus size={16} />
-</button>
-<span className="text-lg font-semibold w-8 text-center">{quantity}</span>
-<button
-  onClick={handleIncrement}
-  disabled={
-    (() => {
-      let max = maxQtyRef.current;
-      if (typeof max !== 'number') return false; // Don't disable if unknown
-      return quantity >= max;
-    })()
-  }
-  className={
-    (() => {
-      let max = maxQtyRef.current;
-      const isDisabled = typeof max === 'number' && quantity >= max;
-      return [
-        'w-10 h-10 rounded-full flex items-center justify-center transition-colors',
-        isDisabled
-          ? 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
-          : 'bg-green-600 text-white hover:bg-green-700'
-      ].join(' ');
-    })()
-  }
->
-  <Plus size={16} />
-</button>
+                      onClick={handleDecrement}
+                      className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center hover:bg-green-200 transition-colors"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="text-lg font-semibold w-8 text-center">{quantity}</span>
+                    <button
+                      onClick={handleIncrement}
+                      disabled={
+                        (() => {
+                          let max = maxQtyRef.current;
+                          if (typeof max !== 'number') return false; // Don't disable if unknown
+                          return quantity >= max;
+                        })()
+                      }
+                      className={
+                        (() => {
+                          let max = maxQtyRef.current;
+                          const isDisabled = typeof max === 'number' && quantity >= max;
+                          return [
+                            'w-10 h-10 rounded-full flex items-center justify-center transition-colors',
+                            isDisabled
+                              ? 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+                              : 'bg-green-600 text-white hover:bg-green-700'
+                          ].join(' ');
+                        })()
+                      }
+                      title={closedTooltip}
+                    >
+                      <Plus size={16} />
+                    </button>
                   </div>
                 )}
               </div>

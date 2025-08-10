@@ -103,12 +103,13 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [paymentCompleted, setPaymentCompleted] = useState(false);
 
-  const progressInterval = useRef<NodeJS.Timeout | null>(null);
-  const confettiTimeout = useRef<NodeJS.Timeout | null>(null);
-  const checkmarkTimeout = useRef<NodeJS.Timeout | null>(null);
-  const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const backendResultTimeout = useRef<NodeJS.Timeout | null>(null);
-
+// ...existing code...
+  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const confettiTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkmarkTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const redirectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backendResultTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+// ...existing code...
   const waitingForBackendRef = useRef(false);
 
   const [rateLimitStatus, setRateLimitStatus] = useState<{

@@ -5,6 +5,12 @@ import ProductDetailModal from '../components/ProductDetailModal';
 import { db } from '../firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useProductLanguage } from '../hooks/useProductLanguage';
+import {
+  USE_BACKEND_OPERATING_HOURS,
+  OPERATING_HOURS_ENDPOINT,
+  OPERATING_HOURS_POLL_MS,
+  FALLBACK_OPERATING_HOURS
+} from '../config';
 
 interface Product {
   id: string;
@@ -145,6 +151,135 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
     fetchFoodProducts();
   }, []);
 
+  // --- Operating hours status (Fast Food page banner) ---
+  const [operatingStatus, setOperatingStatus] = useState<any | null>(null);
+  const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
+  const [opTick, setOpTick] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    let pollId: any = null;
+
+    const applyFallback = () => {
+      const fb = FALLBACK_OPERATING_HOURS;
+      const status = {
+        timezone: fb.timezone,
+        serverTimeTs: Date.now(),
+        store: { open: true, nextOpenTs: null, closeTs: null, countdownSeconds: 0, window: fb.store },
+        fast_food: { open: true, nextOpenTs: null, closeTs: null, countdownSeconds: 0, window: fb.services.fast_food },
+        config: { store: fb.store, services: { fast_food: fb.services.fast_food }, overrides: {} }
+      };
+      if (mounted) {
+        setOperatingStatus(status);
+        setServerTimeOffsetMs(0);
+      }
+    };
+
+    const fetchStatus = async () => {
+      if (!USE_BACKEND_OPERATING_HOURS) {
+        applyFallback();
+        return;
+      }
+      try {
+        const res = await fetch(OPERATING_HOURS_ENDPOINT, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!mounted) return;
+        const now = Date.now();
+        const offset = typeof data.serverTimeTs === 'number' ? (data.serverTimeTs - now) : 0;
+        setOperatingStatus(data);
+        setServerTimeOffsetMs(offset);
+      } catch {
+        applyFallback();
+      }
+    };
+
+    fetchStatus();
+    pollId = setInterval(fetchStatus, OPERATING_HOURS_POLL_MS);
+
+    return () => {
+      mounted = false;
+      if (pollId) clearInterval(pollId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setOpTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  function formatHHMMTo12h(hhmm?: string) {
+    if (!hhmm || typeof hhmm !== 'string') return '';
+    const [hStr, mStr] = hhmm.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return hhmm;
+    const isPM = h >= 12;
+    const hr = ((h + 11) % 12) + 1;
+    const mm = m.toString().padStart(2, '0');
+    return `${hr}:${mm} ${isPM ? 'PM' : 'AM'}`;
+  }
+
+  function formatDuration(ms: number) {
+    if (ms < 0) ms = 0;
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function renderFastFoodHoursBanner() {
+    if (!operatingStatus) return null;
+    const store = operatingStatus.store || {};
+    const ff = operatingStatus.fast_food || {};
+    const cfg = operatingStatus.config || {};
+    const ffWindow = (ff.window && (ff.window.open || ff.window.close))
+      ? ff.window
+      : (cfg.services?.fast_food || FALLBACK_OPERATING_HOURS.services.fast_food);
+
+    const ffOpenStr = formatHHMMTo12h(ffWindow?.open);
+    const ffCloseStr = formatHHMMTo12h(ffWindow?.close);
+
+    const isOpen = !!ff.open;
+    const nowTs = Date.now() + serverTimeOffsetMs;
+
+    let title = '';
+    let body = '';
+    if (isOpen) {
+      title = 'Fast Food is open';
+      body = `Today ${ffOpenStr} – ${ffCloseStr}`;
+    } else {
+      const nextTs = typeof ff.nextOpenTs === 'number' ? ff.nextOpenTs : null;
+      const remainingMs = nextTs ? Math.max(0, nextTs - nowTs) : null;
+      const isTomorrow = remainingMs !== null && remainingMs > 6 * 60 * 60 * 1000;
+      title = isTomorrow ? 'Fast Food closed for today' : 'Fast Food is closed';
+      body = remainingMs !== null && !isTomorrow
+        ? `Opens in ${formatDuration(remainingMs)}`
+        : `Opens ${isTomorrow ? 'tomorrow' : 'at'} ${ffOpenStr}`;
+    }
+
+    const bg = isOpen ? 'bg-green-100 border-green-500 text-green-800' : 'bg-red-100 border-red-500 text-red-800';
+
+    return (
+      <div className="px-4 mt-3">
+        <div className={`flex flex-col sm:flex-row sm:items-center ${bg} border-l-4 p-4 rounded-lg shadow`}>
+          <div className="flex-shrink-0 text-2xl sm:mr-3">{isOpen ? '🟢' : '🔴'}</div>
+          <div className="flex-1">
+            <div className="font-semibold">{title}</div>
+            <div className="text-sm">{body}</div>
+            <div className="text-xs mt-1 opacity-80">
+              Store hours may apply.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -175,7 +310,7 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header with Premium Food Emoji Animation */}
-<div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-6 sticky top-0 z-30 shadow-lg relative overflow-hidden">
+      <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-6 sticky top-0 z-30 shadow-lg relative overflow-hidden">
         {/* Premium Floating Food Emojis Background Animation */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {floatingEmojis.map((emoji, index) => (
@@ -252,6 +387,10 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           <div className="h-0.5 bg-gradient-to-r from-red-400 via-pink-400 to-purple-400 opacity-60 animate-wave-flow-reverse"></div>
         </div>
       </div>
+
+      {/* Fast Food operating hours banner (non-intrusive) */}
+      {renderFastFoodHoursBanner()}
+
       {/* Product Count with Premium Animation */}
       <div
         className="px-4 py-3 bg-white border-b border-gray-100 relative overflow-hidden sticky z-20"
@@ -284,6 +423,7 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           </span>
         </p>
       </div>
+
       {/* Products Grid */}
       {products.length > 0 ? (
         <div className="p-2 sm:p-4">
@@ -323,6 +463,7 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           </button>
         </div>
       )}
+
       {/* Product Detail Modal with stack navigation */}
       {productModalStack.length > 0 && (
         <ProductDetailModal
@@ -335,6 +476,7 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
           onProductSelect={handleProductSelectFromModal}
         />
       )}
+
       {/* Premium Custom CSS Animations */}
       <style jsx>{`
         @media (max-width: 640px) {

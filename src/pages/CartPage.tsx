@@ -88,7 +88,7 @@ const CartPage: React.FC<CartPageProps> = ({
   const maxQtyRef = useRef<Record<string, number>>({});
 
   // Helper: wrap a promise with a timeout (snappier UX)
-  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 8000, label = 'Validation timed out'): Promise<T> => {
+  const withTimeout = useCallback<<T>(promise: Promise<T>, ms?: number, label?: string) => Promise<T>>(<T,>(promise: Promise<T>, ms = 8000, label = 'Validation timed out'): Promise<T> => {
     let timer: any;
     return new Promise<T>((resolve, reject) => {
       timer = setTimeout(() => reject(new Error(label)), ms);
@@ -568,9 +568,28 @@ const CartPage: React.FC<CartPageProps> = ({
         data = { error: 'Server response error' };
       }
 
+      // Prefer operating-hours friendly message when applicable
+      const ohMsg = (() => {
+        if (resp.status === 403 && (data?.code === 'STORE_CLOSED' || data?.code === 'SERVICE_CLOSED')) {
+          const prefix = data?.code === 'STORE_CLOSED' ? 'Store is closed' : 'Fast Food is closed';
+          let suffix = '';
+          if (typeof data?.retryAfter === 'number') {
+            const secs = Math.max(0, Math.round(data.retryAfter));
+            suffix = ` • Opens in ${formatTimeRemaining(secs)}`;
+          } else if (typeof data?.nextOpenTs === 'number') {
+            const secs = Math.max(0, Math.round((data.nextOpenTs - Date.now()) / 1000));
+            suffix = ` • Opens in ${formatTimeRemaining(secs)}`;
+          } else if (data?.nextOpen) {
+            suffix = ` • Next opening: ${data.nextOpen}`;
+          }
+          return `${prefix}.${suffix}`;
+        }
+        return null;
+      })();
+
       const details = (data.details || data.errors) || [];
       const msgList = Array.isArray(details) ? details.map((e: any) => e?.message || e?.code).filter(Boolean) : [];
-      const errorMsg = data?.error || (msgList.length ? msgList.join('\n') : 'Failed to place order. Please review your cart and try again.');
+      const errorMsg = ohMsg || data?.error || (msgList.length ? msgList.join('\n') : 'Failed to place order. Please review your cart and try again.');
       
       if (onOrderPlaced) onOrderPlaced(false, errorMsg);
       window.dispatchEvent(new CustomEvent('orderPlacementResult', {
