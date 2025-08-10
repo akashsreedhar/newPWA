@@ -361,201 +361,238 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   };
 
   // COD: place order immediately; animate while waiting
+// ...existing code...
+// COD: place order immediately; animate while waiting
 const startImmediatePlacementCOD = useCallback(async () => {
+  try {
+    // NEW: block by business/service hours before proceeding
+    const pre = await ensureOrderingAllowed();
+    if (!pre.allowed) {
+      setStep('idle');
+      return;
+    }
+
     startProgressToNinety();
 
-    try {
-      // Let the backend atomically consume any exemption token during placement
-      const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
-      waitingForBackendRef.current = true;
+    // Let the backend atomically consume any exemption token during placement
+    const enrichedCartItems = pre.enriched;
+    waitingForBackendRef.current = true;
 
-      const maybePromise = onPlaceOrder && onPlaceOrder({
-        address: selectedAddress,
-        message,
-        paymentMethod: 'cod',
-        customerName: user?.name,
-        customerPhone: user?.phone,
-        cartItems: enrichedCartItems,
-      });
-      await Promise.resolve(maybePromise);
+    const maybePromise = onPlaceOrder && onPlaceOrder({
+      address: selectedAddress,
+      message,
+      paymentMethod: 'cod',
+      customerName: user?.name,
+      customerPhone: user?.phone,
+      cartItems: enrichedCartItems,
+    });
+    await Promise.resolve(maybePromise);
 
-      if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
-      backendResultTimeout.current = setTimeout(() => {
-        if (!waitingForBackendRef.current) return;
-        setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
-        if (progressInterval.current) {
-          clearInterval(progressInterval.current);
-          progressInterval.current = null;
-        }
-        setStep('idle');
-        setProgress(0);
-        orderPlacementRef.current = false;
-        waitingForBackendRef.current = false;
-      }, 15000);
-    } catch (error) {
-      console.error('Order placement failed:', error);
-      if (progressInterval.current) clearInterval(progressInterval.current);
-      progressInterval.current = null;
-      setError('Failed to place order. Please try again.');
+    if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
+    backendResultTimeout.current = setTimeout(() => {
+      if (!waitingForBackendRef.current) return;
+      setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
       setStep('idle');
       setProgress(0);
       orderPlacementRef.current = false;
       waitingForBackendRef.current = false;
-    }
-  }, [cartItems, message, onPlaceOrder, rateLimitStatus.exemptionReason, selectedAddress, user?.name, user?.phone]);
-
+    }, 15000);
+  } catch (error) {
+    console.error('Order placement failed:', error);
+    if (progressInterval.current) clearInterval(progressInterval.current);
+    progressInterval.current = null;
+    setError('Failed to place order. Please try again.');
+    setStep('idle');
+    setProgress(0);
+    orderPlacementRef.current = false;
+    waitingForBackendRef.current = false;
+  }
+}, [ensureOrderingAllowed, message, onPlaceOrder, selectedAddress, user?.name, user?.phone]);
+// ...existing code...
   // Razorpay Payment Handler (uses centralized BACKEND_URL)
-  const handleRazorpayPayment = async () => {
-    if (!(window as any).Razorpay) {
-      setError('Payment system not loaded. Please refresh and try again.');
-      return;
-    }
-    setProcessingPayment(true);
+  // ...existing code...
+// Razorpay Payment Handler (uses centralized BACKEND_URL)
+const handleRazorpayPayment = async () => {
+  // NEW: block by business/service hours before creating a Razorpay order
+  const pre = await ensureOrderingAllowed();
+  if (!pre.allowed) {
+    setProcessingPayment(false);
     setVerifyingPayment(false);
+    setStep('idle');
+    return;
+  }
 
-    try {
-      const orderResponse = await fetch(`${BACKEND_URL}/create-razorpay-order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: total,
-          currency: 'INR',
-          receipt: `order_${Date.now()}`
-        })
-      });
+  if (!(window as any).Razorpay) {
+    setError('Payment system not loaded. Please refresh and try again.');
+    return;
+  }
+  setProcessingPayment(true);
+  setVerifyingPayment(false);
 
-      if (!orderResponse.ok) {
-        throw new Error('Failed to create payment order');
-      }
+  try {
+    const orderResponse = await fetch(`${BACKEND_URL}/create-razorpay-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // NEW: send items so backend can also enforce kitchen rules
+      body: JSON.stringify({
+        amount: total,
+        currency: 'INR',
+        receipt: `order_${Date.now()}`,
+        items: pre.enriched.map((i: any) => ({ id: i.id, quantity: i.quantity }))
+      })
+    });
 
-      const orderData = await orderResponse.json();
-
-      const options = {
-        key: 'rzp_test_zkGVsDujuT26zg',
-        amount: orderData.amount,
-        currency: orderData.currency,
-        name: 'SuperMarket',
-        description: 'Grocery Order Payment',
-        order_id: orderData.id,
-        prefill: {
-          name: (selectedAddress as any)?.label || 'Customer',
-          contact: (selectedAddress as any)?.phone || '',
-        },
-        config: {
-          display: {
-            blocks: {
-              utib: {
-                name: 'Pay using UPI',
-                instruments: [
-                  { method: 'upi', flows: ['collect', 'intent', 'qr'] },
-                  { method: 'wallet', wallets: ['paytm', 'phonepe', 'googlepay'] }
-                ]
-              },
-              other: {
-                name: 'Other Payment Methods',
-                instruments: [
-                  { method: 'card' },
-                  { method: 'netbanking' }
-                ]
-              }
-            },
-            hide: [{ method: 'emi' }],
-            sequence: ['block.utib', 'block.other'],
-            preferences: { show_default_blocks: false }
-          }
-        },
-        handler: async (response: any) => {
-          try {
-            setVerifyingPayment(true);
-            const verifyResponse = await fetch(`${BACKEND_URL}/verify-payment`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature
-              })
-            });
-
-            if (!verifyResponse.ok) {
-              throw new Error('Payment verification failed');
-            }
-
-            const verifyData = await verifyResponse.json();
-
-            if (verifyData.status === 'success') {
-              setPaymentCompleted(true);
-              setProcessingPayment(false);
-              setVerifyingPayment(false);
-
-              const enrichedCartItems = await enrichCartItemsWithCategory(cartItems);
-              waitingForBackendRef.current = true;
-
-              // Start progress and place order immediately
-              startProgressToNinety();
-
-              const maybePromise = onPlaceOrder && onPlaceOrder({
-                address: selectedAddress,
-                message,
-                paymentMethod: 'online',
-                customerName: user?.name,
-                customerPhone: user?.phone,
-                cartItems: enrichedCartItems,
-                paymentData: {
-                  razorpayOrderId: response.razorpay_order_id,
-                  razorpayPaymentId: response.razorpay_payment_id,
-                  razorpaySignature: response.razorpay_signature,
-                  amount: total,
-                  status: 'paid'
-                }
-              });
-              await Promise.resolve(maybePromise);
-
-              if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
-              backendResultTimeout.current = setTimeout(() => {
-                if (!waitingForBackendRef.current) return;
-                setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
-                if (progressInterval.current) {
-                  clearInterval(progressInterval.current);
-                  progressInterval.current = null;
-                }
-                setStep('idle');
-                setProgress(0);
-                orderPlacementRef.current = false;
-                waitingForBackendRef.current = false;
-              }, 15000);
-            } else {
-              throw new Error('Payment verification failed');
-            }
-          } catch (verifyError) {
-            console.error('❌ Payment verification error:', verifyError);
-            setError('Payment verification failed. Please contact support.');
-            setProcessingPayment(false);
-            setVerifyingPayment(false);
-            setStep('idle');
-          }
-        },
-        modal: {
-          ondismiss: () => {
-            setProcessingPayment(false);
-            setVerifyingPayment(false);
-            setStep('idle');
-          }
-        },
-        theme: { color: '#14b8a6' }
-      };
-
-      const razorpay = new (window as any).Razorpay(options);
-      razorpay.open();
-
-    } catch (error) {
-      console.error('❌ Razorpay payment error:', error);
-      setError('Payment failed. Please try again.');
-      setProcessingPayment(false);
-      setVerifyingPayment(false);
-      setStep('idle');
+    if (!orderResponse.ok) {
+      let errMsg = 'Failed to create payment order';
+      try {
+        const data = await orderResponse.json();
+        if (orderResponse.status === 403 && (data?.code === 'STORE_CLOSED' || data?.code === 'SERVICE_CLOSED')) {
+          const prefix = data?.code === 'STORE_CLOSED' ? 'Store is closed.' : 'Fast Food is unavailable right now.';
+          const retryTxt =
+            typeof data?.retryAfter === 'number' && data.retryAfter > 0
+              ? ` Opens in ${formatTimeRemaining(Math.ceil(data.retryAfter))}.`
+              : '';
+          errMsg = `${prefix}${retryTxt}`;
+        } else if (data?.error) {
+          errMsg = data.error;
+        }
+      } catch {}
+      throw new Error(errMsg);
     }
-  };
+
+    const orderData = await orderResponse.json();
+
+    const options = {
+      key: 'rzp_test_zkGVsDujuT26zg',
+      amount: orderData.amount,
+      currency: orderData.currency,
+      name: 'SuperMarket',
+      description: 'Grocery Order Payment',
+      order_id: orderData.id,
+      prefill: {
+        name: (selectedAddress as any)?.label || 'Customer',
+        contact: (selectedAddress as any)?.phone || '',
+      },
+      config: {
+        display: {
+          blocks: {
+            utib: {
+              name: 'Pay using UPI',
+              instruments: [
+                { method: 'upi', flows: ['collect', 'intent', 'qr'] },
+                { method: 'wallet', wallets: ['paytm', 'phonepe', 'googlepay'] }
+              ]
+            },
+            other: {
+              name: 'Other Payment Methods',
+              instruments: [
+                { method: 'card' },
+                { method: 'netbanking' }
+              ]
+            }
+          },
+          hide: [{ method: 'emi' }],
+          sequence: ['block.utib', 'block.other'],
+          preferences: { show_default_blocks: false }
+        }
+      },
+      handler: async (response: any) => {
+        try {
+          setVerifyingPayment(true);
+          const verifyResponse = await fetch(`${BACKEND_URL}/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature
+            })
+          });
+
+          if (!verifyResponse.ok) {
+            throw new Error('Payment verification failed');
+          }
+
+          const verifyData = await verifyResponse.json();
+
+          if (verifyData.status === 'success') {
+            setPaymentCompleted(true);
+            setProcessingPayment(false);
+            setVerifyingPayment(false);
+
+            // Reuse pre.enriched (already enriched and possibly trimmed to groceries)
+            waitingForBackendRef.current = true;
+
+            // Start progress and place order immediately
+            startProgressToNinety();
+
+            const maybePromise = onPlaceOrder && onPlaceOrder({
+              address: selectedAddress,
+              message,
+              paymentMethod: 'online',
+              customerName: user?.name,
+              customerPhone: user?.phone,
+              cartItems: pre.enriched,
+              paymentData: {
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                amount: total,
+                status: 'paid'
+              }
+            });
+            await Promise.resolve(maybePromise);
+
+            if (backendResultTimeout.current) clearTimeout(backendResultTimeout.current);
+            backendResultTimeout.current = setTimeout(() => {
+              if (!waitingForBackendRef.current) return;
+              setError('Taking longer than expected to confirm your order. Please check your Orders page or try again.');
+              if (progressInterval.current) {
+                clearInterval(progressInterval.current);
+                progressInterval.current = null;
+              }
+              setStep('idle');
+              setProgress(0);
+              orderPlacementRef.current = false;
+              waitingForBackendRef.current = false;
+            }, 15000);
+          } else {
+            throw new Error('Payment verification failed');
+          }
+        } catch (verifyError) {
+          console.error('❌ Payment verification error:', verifyError);
+          setError('Payment verification failed. Please contact support.');
+          setProcessingPayment(false);
+          setVerifyingPayment(false);
+          setStep('idle');
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          setProcessingPayment(false);
+          setVerifyingPayment(false);
+          setStep('idle');
+        }
+      },
+      theme: { color: '#14b8a6' }
+    };
+
+    const razorpay = new (window as any).Razorpay(options);
+    razorpay.open();
+
+  } catch (error: any) {
+    console.error('❌ Razorpay payment error:', error);
+    setError(error?.message || 'Payment failed. Please try again.');
+    setProcessingPayment(false);
+    setVerifyingPayment(false);
+    setStep('idle');
+  }
+};
+// ...existing code...
 
   const enrichCartItemsWithCategory = async (items: any[]) => {
     const enrichedItems = [...items];
@@ -593,6 +630,73 @@ const startImmediatePlacementCOD = useCallback(async () => {
       return `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` and ${minutes} minute${minutes !== 1 ? 's' : ''}` : ''}`;
     }
   };
+
+const isLikelyFastFood = (item: any) => {
+  const c = String(item?.category || '').toLowerCase();
+  const byCategory = c.includes('fast') && c.includes('food');
+  const byFields =
+    item?.spiceLevel !== undefined ||
+    item?.isVeg !== undefined ||
+    !!item?.fssaiLicenseNumber ||
+    !!item?.ingredients ||
+    !!item?.servingSize ||
+    !!item?.preparationDate ||
+    !!item?.bestBefore ||
+    !!item?.storageInstructions;
+  return byCategory || byFields;
+};
+
+// NEW: centralized preflight gate used by COD and Pay Now
+const ensureOrderingAllowed = useCallback(async (): Promise<{ allowed: boolean; enriched: any[] }> => {
+  try {
+    // Enrich products so category-based checks are reliable
+    const enriched = await enrichCartItemsWithCategory(cartItems);
+    const hasFastFood = enriched.some(isLikelyFastFood);
+
+    const resp = await fetch(`${BACKEND_URL}/operating-hours`, { cache: 'no-store' });
+    if (!resp.ok) {
+      setError('Unable to verify operating hours. Please try again.');
+      return { allowed: false, enriched };
+    }
+    const status = await resp.json();
+
+    // Store closed blocks everything
+    if (!status?.store?.open) {
+      const retryTxt =
+        typeof status?.store?.countdownSeconds === 'number' && status.store.countdownSeconds > 0
+          ? ` Opens in ${formatTimeRemaining(Math.ceil(status.store.countdownSeconds))}.`
+          : '';
+      setError(`Store is closed.${retryTxt}`);
+      return { allowed: false, enriched };
+    }
+
+    // Kitchen closed: block fast-food carts; allow removing FF for mixed carts
+    if (hasFastFood && !status?.fast_food?.open) {
+      const retryTxt =
+        typeof status?.fast_food?.countdownSeconds === 'number' && status.fast_food.countdownSeconds > 0
+          ? ` Opens in ${formatTimeRemaining(Math.ceil(status.fast_food.countdownSeconds))}.`
+          : '';
+      const hasGroceryToo = enriched.some(i => !isLikelyFastFood(i));
+
+      if (hasGroceryToo) {
+        const ok = confirm(`Fast Food is unavailable right now.${retryTxt}\n\nRemove Fast Food items and continue with groceries?`);
+        if (ok) {
+          // Remove FF items from cart context and continue with groceries
+          enriched.forEach(i => { if (isLikelyFastFood(i)) removeFromCart(i.id); });
+          const onlyGroceries = enriched.filter(i => !isLikelyFastFood(i));
+          return { allowed: true, enriched: onlyGroceries };
+        }
+      }
+      setError(`Fast Food is unavailable right now.${retryTxt}`);
+      return { allowed: false, enriched };
+    }
+
+    return { allowed: true, enriched };
+  } catch {
+    setError('Unable to verify operating hours. Please try again.');
+    return { allowed: false, enriched: cartItems };
+  }
+}, [cartItems, enrichCartItemsWithCategory, removeFromCart, setError]);
 
   const renderRateLimitStatus = () => {
     if (rateLimitStatus.checking) {
