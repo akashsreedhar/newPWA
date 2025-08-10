@@ -699,19 +699,29 @@ const AppInner: React.FC = () => {
           <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-white/10 rounded-full blur-3xl animate-[op_float_10s_ease-in-out_infinite]" />
           
           {/* Content */}
-          <div className="relative z-10 flex items-center justify-between p-4 sm:p-5 text-white">
-            {/* Left: title + subtitle */}
-            <div className="flex items-start">
-              <div className="mr-3 text-2xl sm:text-3xl leading-none">⏳</div>
-              <div>
-                <div className="text-base sm:text-lg font-extrabold tracking-wide drop-shadow-sm">
-                  {title}
-                </div>
-                <div className="text-xs sm:text-sm font-medium opacity-95">
-                  {subtitle}
-                </div>
-              </div>
-            </div>
+     <div className="relative z-10 flex items-center justify-between p-4 sm:p-5 text-white">
+  {/* Left: title + subtitle */}
+  <div className="flex items-start">
+    <div className="mr-3 text-2xl sm:text-3xl leading-none">⏳</div>
+    <div>
+      <div
+        className={
+          "text-base sm:text-lg font-extrabold tracking-wide drop-shadow-sm" +
+          (title === "Closed for today" ? " text-black" : "")
+        }
+      >
+        {title}
+      </div>
+      <div
+        className={
+          "text-xs sm:text-sm font-medium opacity-95" +
+          (title === "Closed for today" && subtitle.startsWith("Opens tomorrow at") ? " text-black" : "")
+        }
+      >
+        {subtitle}
+      </div>
+    </div>
+  </div>
 
             {/* Right: live countdown */}
             <div className="flex items-center">

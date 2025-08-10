@@ -610,9 +610,14 @@ const CartPage: React.FC<CartPageProps> = ({
                   >
                     {hoursBlock.title}
                   </div>
-                  <div className="text-xs sm:text-sm font-medium opacity-95">
-                    {hoursBlock.subtitle}
-                  </div>
+                  <div
+  className={
+    'text-xs sm:text-sm font-medium opacity-95' +
+    (isClosedToday && hoursBlock.subtitle?.startsWith('Opens tomorrow at') ? ' text-black' : '')
+  }
+>
+  {hoursBlock.subtitle}
+</div>
 
                   {/* CTA when mixed cart and kitchen not open */}
                   {hoursBlock.type === 'kitchen_mixed' && hoursBlock.showRemoveFastFoodCta && (
