@@ -8,7 +8,7 @@ import { useCart } from '../contexts/CartContext';
 import { validateCartPricesAdvanced } from '../utils/advancedPriceValidation';
 import { PriceValidationAnalytics, PriceValidationErrorTracker } from '../utils/priceValidationAnalytics';
 import { telegramRateLimit } from '../services/TelegramRateLimit';
-import { BACKEND_URL } from '../config';
+import { BACKEND_URL, USE_BACKEND_OPERATING_HOURS, OPERATING_HOURS_ENDPOINT, OPERATING_HOURS_POLL_MS, FALLBACK_OPERATING_HOURS } from '../config';
 
 interface Product {
   id: string;
@@ -215,17 +215,6 @@ const CartPage: React.FC<CartPageProps> = ({
     }
   }, [withTimeout]);
 
-  // Validation effect for manual trigger
-  useEffect(() => {
-    if (forceValidationTrigger === 0) return; // skip initial render
-    const currentCartItems = latestCartItemsRef.current;
-    if (currentCartItems.length === 0) return;
-    runValidation(currentCartItems);
-  }, [forceValidationTrigger, runValidation]);
-
-  // Initialize analytics
-  const analytics = useCallback(() => PriceValidationAnalytics.getInstance(), []);
-
   // Validate on load and when coming back from modals
   // IMPORTANT: Do NOT depend on validatingPrices here (causes infinite loop)
   useEffect(() => {
@@ -281,7 +270,7 @@ const CartPage: React.FC<CartPageProps> = ({
         const startTime = Date.now();
         const validation = await validateCartPricesAdvanced(cartItems);
         const duration = Date.now() - startTime;
-        analytics().trackValidation(duration, validation.hasChanges);
+        PriceValidationAnalytics.getInstance().trackValidation(duration, validation.hasChanges);
       } catch (error) {
         PriceValidationErrorTracker.trackError(error as Error, {
           validationType: 'client',
@@ -291,7 +280,7 @@ const CartPage: React.FC<CartPageProps> = ({
       }
     }, 120000);
     return () => clearInterval(interval);
-  }, [cartItems, analytics]);
+  }, [cartItems]);
 
   const deliveryCharges = getCartTotal() >= 500 ? 0 : 0;
   const grandTotal = getCartTotal() + deliveryCharges;
@@ -331,9 +320,296 @@ const CartPage: React.FC<CartPageProps> = ({
     return undefined;
   }, [getMaxOrderQuantity]);
 
+  // =================== Operating Hours (Pre-Checkout UX) ===================
+
+  const [operatingStatus, setOperatingStatus] = useState<any | null>(null);
+  const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
+  const [opTick, setOpTick] = useState(0);
+
+  // Fetch status on mount and poll
+  useEffect(() => {
+    let mounted = true;
+    let pollId: any = null;
+
+    const applyFallback = () => {
+      const fb = FALLBACK_OPERATING_HOURS;
+      // Minimal synthetic status for fallback (assume open to avoid accidental blocking)
+      const status = {
+        timezone: fb.timezone,
+        serverTimeTs: Date.now(),
+        store: { open: true, nextOpenTs: null, closeTs: null, countdownSeconds: 0, window: fb.store },
+        fast_food: { open: true, nextOpenTs: null, closeTs: null, countdownSeconds: 0, window: fb.services.fast_food },
+        config: { store: fb.store, services: { fast_food: fb.services.fast_food }, overrides: {} }
+      };
+      if (mounted) {
+        setOperatingStatus(status);
+        setServerTimeOffsetMs(0);
+      }
+    };
+
+    const fetchStatus = async () => {
+      if (!USE_BACKEND_OPERATING_HOURS) {
+        applyFallback();
+        return;
+      }
+      try {
+        const res = await fetch(OPERATING_HOURS_ENDPOINT, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!mounted) return;
+        const now = Date.now();
+        const offset = typeof data.serverTimeTs === 'number' ? (data.serverTimeTs - now) : 0;
+        setOperatingStatus(data);
+        setServerTimeOffsetMs(offset);
+      } catch {
+        applyFallback();
+      }
+    };
+
+    fetchStatus();
+    pollId = setInterval(fetchStatus, OPERATING_HOURS_POLL_MS);
+
+    return () => {
+      mounted = false;
+      if (pollId) clearInterval(pollId);
+    };
+  }, []);
+
+  // 1s ticker for countdown display only
+  useEffect(() => {
+    const id = setInterval(() => setOpTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const formatHHMMTo12h = (hhmm?: string) => {
+    if (!hhmm || typeof hhmm !== 'string') return '';
+    const [hStr, mStr] = hhmm.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return hhmm;
+    const isPM = h >= 12;
+    const hr = ((h + 11) % 12) + 1;
+    const mm = m.toString().padStart(2, '0');
+    return `${hr}:${mm} ${isPM ? 'PM' : 'AM'}`;
+  };
+
+  const formatDurationCompact = (ms: number) => {
+    if (ms < 0) ms = 0;
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const normalizeCategory = (c: any) => String(c || '').toLowerCase();
+  const isFastFoodItem = (item: any) => {
+    const c = normalizeCategory(item.category);
+    return c.includes('fast') && c.includes('food');
+  };
+  const hasFastFood = cartItems.some(isFastFoodItem);
+  const hasGrocery = cartItems.some(item => !isFastFoodItem(item));
+
+  const nowTs = Date.now() + serverTimeOffsetMs;
+  const storeOpen = !!operatingStatus?.store?.open;
+  const kitchenOpen = !!operatingStatus?.fast_food?.open;
+
+  const storeWindow = (() => {
+    const s = operatingStatus?.store || {};
+    const cfg = operatingStatus?.config || {};
+    return (s.window && (s.window.open || s.window.close)) ? s.window : (cfg.store || FALLBACK_OPERATING_HOURS.store);
+  })();
+  const ffWindow = (() => {
+    const ff = operatingStatus?.fast_food || {};
+    const cfg = operatingStatus?.config || {};
+    return (ff.window && (ff.window.open || ff.window.close)) ? ff.window : (cfg.services?.fast_food || FALLBACK_OPERATING_HOURS.services.fast_food);
+  })();
+
+  const storeOpenStr = formatHHMMTo12h(storeWindow?.open);
+  const ffOpenStr = formatHHMMTo12h(ffWindow?.open);
+
+  const nextStoreTs = typeof operatingStatus?.store?.nextOpenTs === 'number' ? operatingStatus?.store?.nextOpenTs : null;
+  const nextKitchenTs = typeof operatingStatus?.fast_food?.nextOpenTs === 'number' ? operatingStatus?.fast_food?.nextOpenTs : null;
+
+  const isSameDayNextOpen = (nextTs: number | null) =>
+    nextTs ? (new Date(nowTs).toDateString() === new Date(nextTs).toDateString()) : false;
+
+  // Remove all fast food items helper
+  const removeFastFoodItems = () => {
+    cartItems.forEach(item => {
+      if (isFastFoodItem(item)) removeFromCart(item.id);
+    });
+  };
+
+  // Determine hours-based block and banner content
+  type HoursBlock =
+    | { active: false }
+    | {
+        active: true;
+        type: 'store_closed' | 'kitchen_only' | 'kitchen_mixed';
+        title: string;
+        subtitle: string;
+        countdownMs: number | null;
+        showRemoveFastFoodCta?: boolean;
+      };
+
+  const hoursBlock: HoursBlock = (() => {
+    if (!operatingStatus) return { active: false };
+
+    // Case 1: Store is closed -> block everything
+    if (!storeOpen) {
+      const sameDay = isSameDayNextOpen(nextStoreTs);
+      const title = sameDay ? 'Opening soon' : 'Closed for today';
+      const subtitle = sameDay
+        ? (storeOpenStr ? `Come back at ${storeOpenStr}` : 'Please check back soon')
+        : (storeOpenStr ? `Opens tomorrow at ${storeOpenStr}` : 'Please check back tomorrow');
+      const countdownMs = nextStoreTs ? Math.max(0, nextStoreTs - nowTs) : null;
+      return { active: true, type: 'store_closed', title, subtitle, countdownMs };
+    }
+
+    // Case 2: Store open, kitchen closed and cart has fast food
+    if (storeOpen && !kitchenOpen && hasFastFood) {
+      const title = hasGrocery ? 'Kitchen opening soon' : 'Kitchen opening soon';
+      const subtitle = ffOpenStr ? `Come back at ${ffOpenStr}` : 'Please check back soon';
+      const countdownMs = nextKitchenTs ? Math.max(0, nextKitchenTs - nowTs) : null;
+      return {
+        active: true,
+        type: hasGrocery ? 'kitchen_mixed' : 'kitchen_only',
+        title,
+        subtitle,
+        countdownMs,
+        showRemoveFastFoodCta: hasGrocery
+      };
+    }
+
+    // Otherwise, no hours block
+    return { active: false };
+  })();
+
+  // =================== Operating Hours Banner (Premium style) ===================
+
+  const renderOperatingHoursBanner = () => {
+    if (!hoursBlock.active) return null;
+
+    const countdown = hoursBlock.countdownMs != null ? formatDurationCompact(hoursBlock.countdownMs) : '';
+    const isClosedToday = hoursBlock.title === 'Closed for today';
+
+    return (
+      <div className="max-w-lg mx-auto mt-4">
+        <div className="relative overflow-hidden rounded-2xl shadow-lg">
+          {/* Animated gradient background */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(135deg, #0ea5e9 0%, #22c55e 50%, #f59e0b 100%)',
+              filter: 'saturate(110%) brightness(1.05)'
+            }}
+          />
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{
+              background:
+                'radial-gradient(1200px 400px at -10% 0%, rgba(255,255,255,0.35), transparent), radial-gradient(800px 300px at 110% 100%, rgba(255,255,255,0.25), transparent)'
+            }}
+          />
+          {/* Glow border */}
+          <div
+            className="absolute inset-0 rounded-2xl pointer-events-none"
+            style={{ boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)' }}
+          />
+          {/* Floating accents */}
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-2xl animate-[op_float_8s_ease-in-out_infinite]" />
+          <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-white/10 rounded-full blur-3xl animate-[op_float_10s_ease-in-out_infinite]" />
+
+          {/* Content row */}
+          <div className="relative z-10 p-4 sm:p-5 text-white">
+            <div className="flex items-start justify-between">
+              {/* Left: message */}
+              <div className="flex items-start">
+                <div className="mr-3 text-2xl sm:text-3xl leading-none">⏳</div>
+                <div>
+                  <div
+                    className={
+                      'text-base sm:text-lg font-extrabold tracking-wide drop-shadow-sm' +
+                      (isClosedToday ? ' text-red-400' : '')
+                    }
+                  >
+                    {hoursBlock.title}
+                  </div>
+                  <div className="text-xs sm:text-sm font-medium opacity-95">
+                    {hoursBlock.subtitle}
+                  </div>
+
+                  {/* CTA when mixed cart and kitchen not open */}
+                  {hoursBlock.type === 'kitchen_mixed' && hoursBlock.showRemoveFastFoodCta && (
+                    <div className="mt-2">
+                      <button
+                        onClick={removeFastFoodItems}
+                        className="text-xs font-semibold px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 border border-white/30 transition-colors"
+                        type="button"
+                      >
+                        Remove Fast Food items & continue
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: countdown */}
+              <div className="flex items-center">
+                <div className="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-sm border border-white/25 shadow-md">
+                  <div className="text-[10px] sm:text-xs uppercase tracking-wider opacity-90 font-semibold text-white/90">
+                    Opens in
+                  </div>
+                  <div className="font-mono text-lg sm:text-2xl font-bold leading-tight tracking-wider animate-[op_shimmer_3s_linear_infinite]">
+                    {countdown || '--:--'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Short helper note for kitchen-only cart */}
+            {hoursBlock.type === 'kitchen_only' && (
+              <div className="mt-2 text-[11px] sm:text-xs text-white/90">
+                Add grocery items or come back when the kitchen opens.
+              </div>
+            )}
+          </div>
+
+          {/* Local keyframes */}
+          <style>
+            {`
+              @keyframes op_float {
+                0%, 100% { transform: translateY(0px); opacity: 0.7; }
+                50% { transform: translateY(-12px); opacity: 1; }
+              }
+              @keyframes op_shimmer {
+                0% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+                50% { filter: drop-shadow(0 0 8px rgba(255,255,255,0.35)); }
+                100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+              }
+            `}
+          </style>
+        </div>
+      </div>
+    );
+  };
+
+  const isHoursBlocked = hoursBlock.active;
+
+  // =================== Proceed to Checkout flow ===================
+
   // Proceed to checkout with validations (rate-limits, stock, prices)
   const handleProceedToCheckout = async () => {
     if (!userId || accessError) return;
+
+    // Block at Cart when hours logic says so (immersive fast UX)
+    if (isHoursBlocked) {
+      return;
+    }
 
     setPriceValidationResult(null);
     setValidatingPrices(true);
@@ -401,7 +677,7 @@ const CartPage: React.FC<CartPageProps> = ({
       // Price validation (with timeout protection)
       const validation = await withTimeout(validateCartPricesAdvanced(currentCartItems, true), 8000, 'Price validation timed out');
       const duration = Date.now() - startTime;
-      analytics().trackValidation(duration, validation.hasChanges);
+      PriceValidationAnalytics.getInstance().trackValidation(duration, validation.hasChanges);
 
       // Remove unavailable items reported by validation
       if (validation.unavailableItems.length > 0) {
@@ -475,7 +751,7 @@ const CartPage: React.FC<CartPageProps> = ({
     }
     setPriceValidationResult(null);
     setPriceChangeModalOpen(false);
-    analytics().trackOrderCancellation('price_change');
+    PriceValidationAnalytics.getInstance().trackOrderCancellation('price_change');
   };
 
   // Place order: dispatch success immediately on HTTP 200 to avoid UI stall
@@ -707,6 +983,9 @@ const CartPage: React.FC<CartPageProps> = ({
 </div>
       )}
 
+      {/* Operating hours banner (pre-checkout UX) */}
+      {renderOperatingHoursBanner()}
+
       <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
         {cartItems.map(item => (
           <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
@@ -851,8 +1130,8 @@ const CartPage: React.FC<CartPageProps> = ({
       <div className="fixed bottom-16 sm:bottom-20 left-0 right-0 bg-white border-t border-gray-200 p-3 sm:p-4 safe-area-inset-bottom">
         <button
           onClick={handleProceedToCheckout}
-          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
-          disabled={!userId || !!accessError || authLoading || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason)}
+          className={`w-full py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-colors ${(!userId || accessError || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || isHoursBlocked) ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+          disabled={!userId || !!accessError || authLoading || validatingPrices || rateLimitStatus.checking || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || isHoursBlocked}
         >
           {validatingPrices
             ? 'Checking for Offers...'
@@ -862,7 +1141,7 @@ const CartPage: React.FC<CartPageProps> = ({
             ? 'Order Limit Reached'
             : (!userId || accessError)
             ? 'Registration Required'
-            : t('proceedToCheckout') + ` • ₹${grandTotal}`}
+            : `${t('proceedToCheckout')} • ₹${grandTotal}`}
         </button>
       </div>
     </div>
