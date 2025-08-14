@@ -25,9 +25,11 @@ interface AddressModalProps {
   force?: boolean; // Prevent closing if true
 }
 
-const SUPERMARKET_LAT = 12.238109985896054;
-const SUPERMARKET_LNG = 75.2316570229633;
-const DELIVERY_RADIUS_KM = 100;
+
+const SUPERMARKET_LAT = Number(import.meta.env.VITE_SUPERMARKET_LAT);
+const SUPERMARKET_LNG = Number(import.meta.env.VITE_SUPERMARKET_LNG);
+const DELIVERY_RADIUS_KM = Number(import.meta.env.VITE_DELIVERY_RADIUS_KM);
+
 
 const AddressModal: React.FC<AddressModalProps> = ({
   open,

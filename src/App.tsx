@@ -21,7 +21,6 @@ import HouseholdEssentialsPage from './pages/HouseholdEssentialsPage';
 import { useAuth } from './hooks/useAuth.ts';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import logo from './images/Logo.png';
 import {
   USE_BACKEND_OPERATING_HOURS,
   OPERATING_HOURS_ENDPOINT,
@@ -335,7 +334,7 @@ const AppInner: React.FC = () => {
             );
             if (!error && locationData && locationData.latitude && locationData.longitude) {
               try {
-                const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://supermarket-backend-ytrh.onrender.com";
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
                 const response = await fetch(
                   `${backendUrl}/verify-location`,
                   {
@@ -390,7 +389,7 @@ const AppInner: React.FC = () => {
               `Browser geolocation success: lat=${position.coords.latitude}, lng=${position.coords.longitude}`
             );
             try {
-              const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://supermarket-backend-ytrh.onrender.com";
+              const backendUrl = import.meta.env.VITE_BACKEND_URL;
               const response = await fetch(
                 `${backendUrl}/verify-location`,
                 {
@@ -794,8 +793,8 @@ const AppInner: React.FC = () => {
             <div className="absolute inset-0 bg-white rounded-2xl opacity-90 blur-md transform scale-110"></div>
             <div className="relative bg-white rounded-xl p-6 shadow-2xl">
               <img
-                src={logo}
-                alt="7Days Hypermarket Logo"
+                src={import.meta.env.VITE_LOGO_PATH}
+                alt={import.meta.env.VITE_REGISTRATION_LOGO_ALT}
                 className="w-28 h-28 md:w-32 md:h-32 object-contain animate-logo-entrance"
                 draggable={false}
               />

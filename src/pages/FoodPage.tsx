@@ -384,8 +384,9 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
               <h1 className="text-xl font-bold">Fast Food</h1>
             </div>
           </div>
-          <p className="text-orange-100 mt-1 text-sm">1 Pm to 8 Pm</p>
-        </div>
+  <p className="text-orange-100 text-sm">
+      {import.meta.env.VITE_FAST_FOOD_HOURS_LABEL || '1 Pm to 8 Pm'}
+    </p>        </div>
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-orange-500 border-t-transparent"></div>
         </div>
@@ -443,8 +444,9 @@ const FoodPage: React.FC<FoodPageProps> = ({ onBack }) => {
               <ChefHat size={24} className="mr-2" />
               <div>
                 <h1 className="text-xl font-bold">Fast Food</h1>
-                <p className="text-orange-100 text-sm">1 Pm to 8 Pm</p>
-              </div>
+  <p className="text-orange-100 text-sm">
+      {import.meta.env.VITE_FAST_FOOD_HOURS_LABEL || '1 Pm to 8 Pm'}
+    </p>              </div>
             </div>
           </div>
           {/* Premium Animated Badge with Sophisticated Effects */}

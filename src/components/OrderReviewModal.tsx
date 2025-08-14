@@ -238,7 +238,7 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
   const totalSavings = totalMRP - total;
   const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
-  const isCodDisabled = total > 1000;
+  const isCodDisabled = total > Number(import.meta.env.VITE_COD_LIMIT)
 
   useEffect(() => {
     if (isCodDisabled && paymentMethod === 'cod') {
@@ -552,18 +552,18 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
           } else if (data?.error) {
             errMsg = data.error;
           }
-        } catch {}
+        } catch { }
         throw new Error(errMsg);
       }
 
       const orderData = await orderResponse.json();
 
       const options = {
-        key: 'rzp_test_zkGVsDujuT26zg',
+        key: import.meta.env.VITE_RAZORPAY_KEY,
         amount: orderData.amount,
         currency: orderData.currency,
-        name: 'SuperMarket',
-        description: 'Grocery Order Payment',
+        name: import.meta.env.VITE_BUSINESS_NAME || 'SuperMarket',
+        description: import.meta.env.VITE_PAYMENT_DESCRIPTION || 'Grocery Order Payment',
         order_id: orderData.id,
         prefill: {
           name: (selectedAddress as any)?.label || 'Customer',
@@ -696,38 +696,38 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
     }
     if (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) {
       return (
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
-  <div className="flex items-start gap-2">
-    <AlertTriangle className="text-orange-500 mt-0.5" size={18} />
-    <div>
-      <p className="text-orange-700 text-sm font-semibold mb-1">
-        Order limit reached for now
-      </p>
-      <p className="text-orange-600 text-xs">
-        You’ve reached the maximum number of orders allowed at this time.
-        {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
-          <>
-            <br />
-            <span>
-              Please try again in {formatTimeRemaining(rateLimitStatus.retryAfter)}.
-            </span>
-          </>
-        )}
-        {rateLimitStatus.activeOrders && rateLimitStatus.activeOrders > 0 && (
-          <>
-            <br />
-            <span>
-              You currently have {rateLimitStatus.activeOrders} active order{rateLimitStatus.activeOrders > 1 ? 's' : ''}.
-            </span>
-          </>
-        )}
-      </p>
-    </div>
-  </div>
-</div>
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="text-orange-500 mt-0.5" size={18} />
+            <div>
+              <p className="text-orange-700 text-sm font-semibold mb-1">
+                Order limit reached for now
+              </p>
+              <p className="text-orange-600 text-xs">
+                You’ve reached the maximum number of orders allowed at this time.
+                {rateLimitStatus.retryAfter && rateLimitStatus.retryAfter > 0 && (
+                  <>
+                    <br />
+                    <span>
+                      Please try again in {formatTimeRemaining(rateLimitStatus.retryAfter)}.
+                    </span>
+                  </>
+                )}
+                {rateLimitStatus.activeOrders && rateLimitStatus.activeOrders > 0 && (
+                  <>
+                    <br />
+                    <span>
+                      You currently have {rateLimitStatus.activeOrders} active order{rateLimitStatus.activeOrders > 1 ? 's' : ''}.
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
       );
     }
-    
+
     return null;
   };
 
@@ -878,10 +878,10 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
                   <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded mb-4">
                     {loading && step === 'idle' ? 'Checking registration status...' : (
                       <>
-                        <b>Registration Required:</b> Please register via the SuperMarket Telegram bot before placing an order.<br />
-                        <b>Step 1:</b> Go to the SuperMarket Telegram bot.<br />
-                        <b>Step 2:</b> Complete registration by sharing your name, phone, and location.<br />
-                        <b>Step 3:</b> Then return here and try again!
+                        <b>{import.meta.env.VITE_REGISTRATION_TITLE}</b> {import.meta.env.VITE_REGISTRATION_MESSAGE}<br />
+                        <b>Step 1:</b> {import.meta.env.VITE_REGISTRATION_STEP1}<br />
+                        <b>Step 2:</b> {import.meta.env.VITE_REGISTRATION_STEP2}<br />
+                        <b>Step 3:</b> {import.meta.env.VITE_REGISTRATION_STEP3}
                       </>
                     )}
                   </div>
@@ -1055,10 +1055,10 @@ const OrderReviewModal: React.FC<OrderReviewModalProps> = ({
               <div className="flex flex-col gap-2 bg-white pb-8 pt-2 sticky bottom-0 z-20" style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))', background: 'white' }}>
                 <button
                   className={`w-full py-3 rounded-lg font-bold text-white relative overflow-hidden transition-colors ${disableOrderReview || !deliveryAllowed || !selectedAddress || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : step === 'confetti' || step === 'checkmark' || paymentCompleted
-                        ? 'bg-green-500'
-                        : 'bg-teal-600 hover:bg-teal-700'
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : step === 'confetti' || step === 'checkmark' || paymentCompleted
+                      ? 'bg-green-500'
+                      : 'bg-teal-600 hover:bg-teal-700'
                     }`}
                   onClick={handlePlaceOrder}
                   disabled={disableOrderReview || !deliveryAllowed || deliveryCheckPending || loading || (step !== 'idle' && step !== 'payment') || !selectedAddress || processingPayment || (!rateLimitStatus.allowed && !rateLimitStatus.exemptionReason) || rateLimitStatus.checking || orderPlacementRef.current}

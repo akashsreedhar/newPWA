@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BOT_SERVER_URL } from '../config';
-import safariLogo from '../images/Logo.png';
 import { motion } from "framer-motion";
-
+import safariLogo from '../images/Logo.png';
 // Define props interface
 interface WebAppRegistrationProps {
   initData: string;
@@ -718,8 +717,8 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
         <div className="text-center mb-6">
           <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
             <img
-              src={safariLogo}
-              alt="Safari Cheemeni Logo"
+              src={import.meta.env.VITE_REGISTRATION_LOGO}
+              alt={import.meta.env.VITE_REGISTRATION_LOGO_ALT} 
               className="w-20 h-20 rounded-full object-cover shadow-lg"
               style={{
                 boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 1.5px 4px rgba(0,0,0,0.10)'
@@ -727,7 +726,7 @@ const WebAppRegistration: React.FC<WebAppRegistrationProps> = ({
             />
           </div>
           <h1 className="text-xl font-bold text-gray-800 mb-2">
-            Welcome to Safari Cheemeni
+              {import.meta.env.VITE_REGISTRATION_WELCOME}
           </h1>
           <p className="text-gray-600 text-sm">Set up your account in 3 simple steps</p>
         </div>

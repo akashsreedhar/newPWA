@@ -78,15 +78,14 @@ export class TelegramRateLimit {
   private telegramWebApp: any = null;
   private telegramUser: any = null;
   private telegramCloudStorage: any = null;
-  private backendUrl = 'https://supermarket-backend-ytrh.onrender.com';
-
+private backendUrl = import.meta.env.VITE_BACKEND_URL;
   // Learned config from server (fallback-safe defaults match backend)
-  private learnedConfig: LearnedConfig = {
-    maxActiveOrders: 3,
-    minIntervalMinutes: 2,
-    maxDailyOrders: 20,
-    postExemptionCooldownMinutes: 2
-  };
+ private learnedConfig: LearnedConfig = {
+  maxActiveOrders: Number(import.meta.env.VITE_ORDER_MAX_ACTIVE || 3),
+  minIntervalMinutes: Number(import.meta.env.VITE_ORDER_MIN_INTERVAL || 2),
+  maxDailyOrders: Number(import.meta.env.VITE_ORDER_MAX_DAILY || 20),
+  postExemptionCooldownMinutes: Number(import.meta.env.VITE_ORDER_POST_EXEMPTION_COOLDOWN || 2)
+};
 
   // In-memory cache to minimize storage and API operations
   private cache: {

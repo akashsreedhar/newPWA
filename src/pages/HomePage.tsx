@@ -286,7 +286,9 @@ const HomePage: React.FC<HomePageProps> = ({ onCategorySelect }) => {
     <div className="bg-gray-50 min-h-screen pb-20 sm:pb-24">
       {/* Banner */}
       <div className="bg-gradient-to-r from-teal-600 to-blue-600 text-white p-3 sm:p-4 mx-3 sm:mx-4 mt-3 sm:mt-4 rounded-xl">
-        <h2 className="text-base sm:text-lg font-semibold leading-tight">Welcome to Safari Cheemeni</h2>
+<h2 className="text-base sm:text-lg font-semibold leading-tight">
+  {import.meta.env.VITE_REGISTRATION_WELCOME}
+</h2>
       </div>
 
       {/* Main Categories Section */}

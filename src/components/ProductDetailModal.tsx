@@ -399,10 +399,10 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ isOpen, onClose
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <div className="flex items-center space-x-3">
                 <Truck className="w-5 h-5 text-green-600" />
-                <div>
+                {/* <div>
                   <span className="text-sm font-medium text-green-700">Free Delivery</span>
                   <p className="text-xs text-green-600">On orders above ₹500 • Delivered in 30 mins</p>
-                </div>
+                </div> */}
               </div>
             </div>
 

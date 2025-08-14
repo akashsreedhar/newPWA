@@ -282,8 +282,10 @@ const CartPage: React.FC<CartPageProps> = ({
     return () => clearInterval(interval);
   }, [cartItems]);
 
-  const deliveryCharges = getCartTotal() >= 500 ? 0 : 0;
-  const grandTotal = getCartTotal() + deliveryCharges;
+const deliveryChargeThreshold = Number(import.meta.env.VITE_DELIVERY_CHARGE_THRESHOLD || 500);
+const deliveryChargeAmount = Number(import.meta.env.VITE_DELIVERY_CHARGE_AMOUNT || 0);
+
+const deliveryCharges = getCartTotal() >= deliveryChargeThreshold ? 0 : deliveryChargeAmount;  const grandTotal = getCartTotal() + deliveryCharges;
 
   const getDisplayName = (item: any) => {
     if (languageDisplay === 'single') {

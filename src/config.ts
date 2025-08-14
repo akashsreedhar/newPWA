@@ -3,25 +3,22 @@
  * Contains environment-specific URLs and settings
  */
 
-// API endpoints
-export const BOT_SERVER_URL =
-  import.meta.env.VITE_BACKEND_URL || 'https://supermarket-backend-ytrh.onrender.com';
+// API endpoints - fully configurable via environment variables
+export const BOT_SERVER_URL = import.meta.env.VITE_BACKEND_URL;
 
-export const BACKEND_URL =
-  (import.meta as any)?.env?.VITE_BACKEND_URL ||
-  'https://supermarket-backend-ytrh.onrender.com';
+export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
-// WebApp URL (used by bot)
-export const WEBAPP_URL = 'https://new-pwa-hazel.vercel.app/';
+// WebApp URL (used by bot) - now configurable
+export const WEBAPP_URL = import.meta.env.VITE_WEBAPP_URL;
 
-// Store location for delivery radius calculation
+// Store location for delivery radius calculation - now configurable
 export const STORE_LOCATION = {
-  latitude: 12.238554127515341,
-  longitude: 75.23239831991346
+  latitude: Number(import.meta.env.VITE_SUPERMARKET_LAT),
+  longitude: Number(import.meta.env.VITE_SUPERMARKET_LNG)
 };
 
-// Delivery radius in kilometers
-export const DELIVERY_RADIUS_KM = 100;
+// Delivery radius in kilometers - now configurable
+export const DELIVERY_RADIUS_KM = Number(import.meta.env.VITE_DELIVERY_RADIUS_KM);
 
 // Environment variables
 export const isDevelopment =
@@ -54,21 +51,20 @@ export const DEFAULT_TIMEZONE = import.meta.env.VITE_TIMEZONE || 'Asia/Kolkata';
 export const FALLBACK_OPERATING_HOURS = {
   timezone: DEFAULT_TIMEZONE,
   store: {
-    open: import.meta.env.VITE_STORE_OPEN || '09:00',
-    close: import.meta.env.VITE_STORE_CLOSE || '20:00',
+    open: import.meta.env.VITE_STORE_OPEN!,
+    close: import.meta.env.VITE_STORE_CLOSE!,
     lastOrderBufferMinutes: Number.parseInt(
-      import.meta.env.VITE_LAST_ORDER_BUFFER_MINUTES || '0',
+      import.meta.env.VITE_LAST_ORDER_BUFFER_MINUTES!,
       10
     )
   },
   services: {
     fast_food: {
-      open: import.meta.env.VITE_FASTFOOD_OPEN || '13:00',
-      close: import.meta.env.VITE_FASTFOOD_CLOSE || '20:00',
+      open: import.meta.env.VITE_FASTFOOD_OPEN!,
+      close: import.meta.env.VITE_FASTFOOD_CLOSE!,
       lastOrderBufferMinutes: Number.parseInt(
         import.meta.env.VITE_FASTFOOD_LAST_ORDER_BUFFER_MINUTES ||
-          import.meta.env.VITE_LAST_ORDER_BUFFER_MINUTES ||
-          '0',
+          import.meta.env.VITE_LAST_ORDER_BUFFER_MINUTES!,
         10
       )
     }

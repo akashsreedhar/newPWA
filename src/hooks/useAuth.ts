@@ -84,12 +84,13 @@ export function useAuth(fingerprint: string | null): AuthReturn {
       
       if (import.meta.env.VITE_DEV_MODE === 'true') {
         console.log('✅ DEV MODE: Using mock user');
-        setUserId('123456789');
-        setLastLocation({
-          latitude: 12.23811,
-          longitude: 75.23166,
-          address: "123 Main Street, Test City"
-        });
+        setUserId(import.meta.env.VITE_DEV_USER_ID || '123456789');
+setLastLocation({
+  latitude: Number(import.meta.env.VITE_DEV_USER_LAT || 12.23811),
+  longitude: Number(import.meta.env.VITE_DEV_USER_LNG || 75.23166),
+  address: import.meta.env.VITE_DEV_USER_ADDRESS || "123 Main Street, Test City"
+});
+
         setAccessError("");
         setLoading(false);
         setRegistrationMode(false);
@@ -117,9 +118,9 @@ export function useAuth(fingerprint: string | null): AuthReturn {
       setLoading(true);
 
       try {
-        const BOT_SERVER_URL = process.env.NODE_ENV === 'production' 
-          ? 'https://supermarket-backend-ytrh.onrender.com'
-          : 'http://localhost:3000'; // Make sure this matches your backend port
+        const BOT_SERVER_URL = process.env.NODE_ENV === 'production'
+  ? import.meta.env.VITE_BACKEND_URL_PROD
+  : import.meta.env.VITE_BACKEND_URL_DEV;
 
         // --- NEW: Telegram Mini App Auth ---
         const tgWebApp = window.Telegram && window.Telegram.WebApp;

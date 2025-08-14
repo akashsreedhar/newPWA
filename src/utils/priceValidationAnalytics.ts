@@ -65,7 +65,8 @@ export class PriceValidationAnalytics {
 
     // Example: Send to custom analytics endpoint
     if (process.env.NODE_ENV === 'production') {
-      fetch('/api/analytics', {
+      const analyticsEndpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+      fetch(analyticsEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event, data })
@@ -99,9 +100,9 @@ export class PriceValidationErrorTracker {
     if (process.env.NODE_ENV === 'production') {
       // Example: Sentry
       // Sentry.captureException(error, { extra: errorData });
-      
+      const errorEndpoint = import.meta.env.VITE_ERROR_ENDPOINT || '/api/errors';
       // Example: Custom error endpoint
-      fetch('/api/errors', {
+      fetch(errorEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(errorData)

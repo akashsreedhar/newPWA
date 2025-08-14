@@ -4,9 +4,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 // Supermarket coordinates (same as in bot)
-const SUPERMARKET_LAT = 12.238109985896054;
-const SUPERMARKET_LNG = 75.2316570229633;
-const DELIVERY_RADIUS_KM = 100;
+const SUPERMARKET_LAT = Number(import.meta.env.VITE_SUPERMARKET_LAT);
+const SUPERMARKET_LNG = Number(import.meta.env.VITE_SUPERMARKET_LNG);
+const DELIVERY_RADIUS_KM = Number(import.meta.env.VITE_DELIVERY_RADIUS_KM);
 
 interface MapPickerProps {
   lat: number | null;
@@ -175,7 +175,7 @@ const MapPicker: React.FC<MapPickerProps> = ({ lat, lng, onChange }) => {
       </button>
       {distanceError && <div className="text-xs text-red-500">{distanceError}</div>}
       <div className="text-xs text-gray-500">
-        Tap the map or drag the marker to set your delivery location. Delivery available within {DELIVERY_RADIUS_KM}km of the supermarket.
+        Tap the map or drag the marker to set your delivery location. Delivery available within {DELIVERY_RADIUS_KM}km.
       </div>
     </div>
   );
